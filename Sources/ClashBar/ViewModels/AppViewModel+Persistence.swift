@@ -59,6 +59,7 @@ extension AppViewModel {
     }
 
     func syncConfigDisplayState() {
+        self.refreshNativeRuleDocument()
         configDirectoryPath = configService.configDirectory?.path ?? "-"
         availableConfigFileNames = configService.availableConfigs.map(\.lastPathComponent)
         if selectedConfigName == "-", let first = availableConfigFileNames.first {

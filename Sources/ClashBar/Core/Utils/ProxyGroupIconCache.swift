@@ -1,6 +1,5 @@
 import AppKit
 import CryptoKit
-import ImageIO
 import SwiftUI
 
 actor ProxyGroupIconCache {
@@ -62,8 +61,8 @@ actor ProxyGroupIconCache {
 
     private func validImageData(at fileURL: URL) -> Data? {
         guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]),
-              data.count <= 2 * 1024 * 1024,
-              Self.isValidImageData(data)
+            data.count <= ProxyGroupIconDecoder.maximumBytes,
+            ProxyGroupIconDecoder.isRasterImage(data)
         else {
             try? FileManager.default.removeItem(at: fileURL)
             return nil
@@ -80,10 +79,12 @@ actor ProxyGroupIconCache {
 
     private func trimDiskCacheIfNeeded() {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey]
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: self.diskDirectory,
-            includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles])
+        guard
+            let files = try? FileManager.default.contentsOfDirectory(
+                at: self.diskDirectory,
+                includingPropertiesForKeys: Array(keys),
+                options: [.skipsHiddenFiles]
+            )
         else { return }
 
         var entries: [(url: URL, modifiedAt: Date, size: Int)] = []
@@ -107,12 +108,12 @@ actor ProxyGroupIconCache {
     }
 
     private static func downloadImageData(from url: URL, session: URLSession) async -> Data? {
-        let maximumBytes = 2 * 1024 * 1024
+        let maximumBytes = ProxyGroupIconDecoder.maximumBytes
         do {
             let (bytes, response) = try await session.bytes(from: url)
             guard let response = response as? HTTPURLResponse,
-                  (200...299).contains(response.statusCode),
-                  response.expectedContentLength <= Int64(maximumBytes)
+                (200...299).contains(response.statusCode),
+                response.expectedContentLength <= Int64(maximumBytes)
             else { return nil }
 
             var data = Data()
@@ -121,18 +122,10 @@ actor ProxyGroupIconCache {
                 guard data.count < maximumBytes else { return nil }
                 data.append(byte)
             }
-            return Self.isValidImageData(data) ? data : nil
+            return await ProxyGroupIconDecoder.normalizedData(data)
         } catch {
             return nil
         }
-    }
-
-    private static func isValidImageData(_ data: Data) -> Bool {
-        guard !data.isEmpty,
-              let source = CGImageSourceCreateWithData(data as CFData, nil),
-              CGImageSourceGetCount(source) > 0
-        else { return false }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
     }
 }
 
@@ -140,11 +133,13 @@ extension EnvironmentValues {
     @Entry var proxyGroupIconCache: ProxyGroupIconCache = .unavailable
 }
 
-struct ProxyGroupIconView: View {
+struct ProxyGroupIconView: TranslatingView {
     let url: URL
 
+    @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.proxyGroupIconCache) private var iconCache
     @State private var nsImage: NSImage?
+    @State private var didFail = false
 
     var body: some View {
         ZStack {
@@ -154,14 +149,30 @@ struct ProxyGroupIconView: View {
                     .interpolation(.high)
                     .antialiased(true)
                     .scaledToFit()
+            } else {
+                Image(systemName: "network")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+                    .opacity(self.didFail ? 0.7 : 0.35)
+                    .help(self.tr(self.didFail ? "ui.proxy_icon.failed" : "ui.proxy_icon.loading"))
             }
         }
         .task(id: self.url) {
-            guard let data = await self.iconCache.imageData(for: self.url) else {
-                self.nsImage = nil
-                return
+            self.nsImage = nil
+            self.didFail = false
+            for attempt in 0..<2 {
+                let data = await self.iconCache.imageData(for: self.url)
+                guard !Task.isCancelled else { return }
+                if let data, let image = NSImage(data: data) {
+                    self.nsImage = image
+                    return
+                }
+                if attempt == 0 {
+                    do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                }
             }
-            self.nsImage = NSImage(data: data)
+            self.didFail = true
         }
     }
 }

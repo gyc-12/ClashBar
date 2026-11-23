@@ -1,5 +1,7 @@
 import Foundation
 
+private final class AppResourceBundleToken: NSObject {}
+
 enum AppResourceBundleLocator {
     private static let moduleBundleName = "ClashBar_ClashBar.bundle"
 
@@ -67,6 +69,11 @@ enum AppResourceBundleLocator {
         let executableURL = URL(fileURLWithPath: CommandLine.arguments[0], isDirectory: false)
         let executableDirectoryURL = executableURL.deletingLastPathComponent()
         urls.append(executableDirectoryURL.appendingPathComponent(self.moduleBundleName, isDirectory: true))
+
+        // SwiftPM tests load the app module into an XCTest bundle beside its resources.
+        let ownerBundle = Bundle(for: AppResourceBundleToken.self)
+        urls.append(ownerBundle.bundleURL.deletingLastPathComponent()
+            .appendingPathComponent(self.moduleBundleName, isDirectory: true))
 
         return self.deduplicated(urls)
     }

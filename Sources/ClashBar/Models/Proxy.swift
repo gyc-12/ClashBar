@@ -17,7 +17,10 @@ struct ProxyGroup: Decodable, Equatable {
     let timeout: Int?
     let icon: String?
     let hidden: Bool?
-    let delayHistory: [Int]
+    let latencyHistory: [ProxyLatencySample]
+    var delayHistory: [Int] { self.latencyHistory.map(\.delay) }
+    let interval: Int?
+    let lazy: Bool?
 
     init(
         name: String,
@@ -28,7 +31,10 @@ struct ProxyGroup: Decodable, Equatable {
         timeout: Int? = nil,
         icon: String? = nil,
         hidden: Bool? = nil,
-        delayHistory: [Int] = [])
+        delayHistory: [Int] = [],
+        latencyHistory: [ProxyLatencySample]? = nil,
+        interval: Int? = nil,
+        lazy: Bool? = nil)
     {
         self.name = name
         self.type = type
@@ -38,7 +44,9 @@ struct ProxyGroup: Decodable, Equatable {
         self.timeout = timeout.positiveOrNil
         self.icon = icon.trimmedNonEmpty
         self.hidden = hidden
-        self.delayHistory = delayHistory
+        self.latencyHistory = latencyHistory ?? delayHistory.map { ProxyLatencySample(delay: $0) }
+        self.interval = interval
+        self.lazy = lazy
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -51,6 +59,7 @@ struct ProxyGroup: Decodable, Equatable {
         case icon
         case hidden
         case history
+        case interval, lazy
     }
 
     init(from decoder: Decoder) throws {
@@ -63,7 +72,9 @@ struct ProxyGroup: Decodable, Equatable {
         self.timeout = container.decodeFlexibleInt(forKey: .timeout).positiveOrNil
         self.icon = try container.decodeIfPresent(String.self, forKey: .icon).trimmedNonEmpty
         self.hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden)
-        self.delayHistory = container.decodeDelayHistory(forKey: .history)
+        self.latencyHistory = container.decodeLatencyHistory(forKey: .history)
+        self.interval = container.decodeFlexibleInt(forKey: .interval).positiveOrNil
+        self.lazy = container.decodeFlexibleBool(forKey: .lazy)
     }
 }
 

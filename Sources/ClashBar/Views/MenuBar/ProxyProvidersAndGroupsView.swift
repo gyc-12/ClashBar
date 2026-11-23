@@ -319,7 +319,7 @@ extension ProxyTabView {
                         .background(nativeBadgeCapsule())
                         .frame(width: columns.current, alignment: .leading)
 
-                    Group {
+                    VStack(alignment: .trailing, spacing: 1) {
                         if delayValue != nil {
                             delayBadge(
                                 samples: delaySamples,
@@ -332,6 +332,9 @@ extension ProxyTabView {
                                 .lineLimit(1)
                                 .minimumScaleFactor(T.minimumScale)
                         }
+                        LatencyAgeView(
+                            sample: appViewModel.latencySamples(group: group.name, node: currentNode, fallbackToGroupHistory: true).last,
+                            language: language, interval: group.interval)
                     }
                     .frame(width: columns.delay, alignment: .trailing)
 
@@ -345,16 +348,25 @@ extension ProxyTabView {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
-            .frame(height: T.compactRowHeight)
+            .frame(height: 30)
             .padding(.horizontal, rowHorizontalPadding)
             .padding(.vertical, rowVerticalPadding)
             .background(nativeHoverRowBackground(isHovered))
         } content: { dismiss in
             self.popoverHeader(name: group.name, count: nodeCount) {
                 if let iconURL {
+                    // 该 popover 内容由独立的 NSHostingController 承载，不会继承主界面的环境，
+                    // 而 ProxyGroupIconView 依赖 AppViewModel 与图标缓存，必须在这里显式注入。
                     self.proxyGroupLeadingIcon(iconURL)
+                        .environmentObject(self.appViewModel)
+                        .environment(\.proxyGroupIconCache, self.appViewModel.proxyGroupIconCache)
                 }
             } trailing: {
+                Button {
+                    dismiss()
+                    self.appViewModel.proxyGroupDetailName = group.name
+                } label: { Image(systemName: "info.circle") }
+                    .buttonStyle(.plain).help(tr("ui.diagnostics.group_details"))
                 self.providerActionButton(
                     .healthcheck,
                     isLoading: proxyStore.groupLatencyLoading.contains(group.name))
@@ -363,6 +375,10 @@ extension ProxyTabView {
                 }
                 .help(tr("ui.action.test_latency"))
             }
+
+            Text(tr("ui.diagnostics.popover_note"))
+                .font(.system(size: 9)).foregroundStyle(.secondary)
+                .padding(.horizontal, T.space4).padding(.bottom, 4)
 
             let nodes = sortGroupNodesByLatency
                 ? self.sortedGroupNodes(group)
@@ -375,6 +391,8 @@ extension ProxyTabView {
                     typeText: proxyStore.proxyNodeTypes[node].trimmedNonEmpty,
                     delayText: appViewModel.delayText(group: group.name, node: node),
                     delaySamples: nodeSamples,
+                    latestSample: appViewModel.latencySamples(group: group.name, node: node).last,
+                    language: language,
                     delayColor: latencyColor(nodeDelay),
                     isTesting: appViewModel.isProxyLatencyTesting(group: group.name, node: node),
                     selected: node == group.now,
@@ -562,6 +580,8 @@ private struct ProxyGroupPopoverNodeItem: View {
     let typeText: String?
     let delayText: String
     let delaySamples: [Int]
+    let latestSample: ProxyLatencySample?
+    let language: AppLanguage
     let delayColor: Color
     let isTesting: Bool
     let selected: Bool
@@ -616,10 +636,12 @@ private struct ProxyGroupPopoverNodeItem: View {
             }
             .buttonStyle(.plain)
 
-            self.latencyControl
-                .frame(width: 56, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 1) {
+                self.latencyControl
+                LatencyAgeView(sample: self.latestSample, language: self.language)
+            }.frame(width: 72, alignment: .trailing)
         }
-        .frame(height: T.compactRowHeight)
+        .frame(height: 30)
         .padding(.horizontal, T.space4)
         .padding(.vertical, T.space1)
         .background(

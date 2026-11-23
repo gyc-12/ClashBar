@@ -65,6 +65,16 @@ struct MenuBarHeaderView: TranslatingView {
                     HStack(spacing: T.space6) {
                         self.headerConnectionControl
                         self.headerControllerWebUIButton
+                        Button {
+                            Task { await self.appViewModel.openBrowserQuickRule() }
+                        } label: {
+                            Image(systemName: "globe")
+                                .font(.app(size: T.FontSize.caption, weight: .semibold))
+                        }
+                        .buttonStyle(.plain)
+                        .help(self.tr(self.appViewModel.isRemoteTarget ? "ui.quick_rule.local_only" : "ui.quick_rule.browser"))
+                        .accessibilityLabel(self.tr("ui.quick_rule.browser"))
+                        .disabled(!self.appViewModel.canEditQuickRules)
                         if self.appViewModel.isExternalControllerWildcardIPv4 {
                             self.headerControllerWarningIcon
                         }

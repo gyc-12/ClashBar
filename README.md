@@ -114,7 +114,7 @@ brew uninstall --zap --cask clashbar
 | 页面           | 内容                                            |
 | -------------- | ----------------------------------------------- |
 | 🧭 Proxy       | 配置、模式、系统代理、节点切换、延迟与 Provider |
-| 📚 Rules       | 规则统计、筛选、Provider 更新                   |
+| 📚 Rules       | 规则统计、筛选、Provider 更新、快捷添加分流规则 |
 | 🌐 Connections | 连接过滤与关闭                                  |
 | 🪵 Logs        | 级别过滤、关键词检索                            |
 | ⚙️ System      | 语言、状态栏、端口、`allow-lan` / `ipv6` 等     |
@@ -130,6 +130,8 @@ make build                 # 产出 dist/ClashBar.app（默认不含 Core）
 make build WITH_CORE=1     # 打包内置 mihomo
 make dist WITH_CORE=1      # app + dmg
 ```
+
+需求和代码关系使用 OpenSpec / CodeGraph 管理，见 [开发工作流](./DEVELOPMENT.md)。快捷添加的规则直接保存为 mihomo 原生配置，使用方式见 [快捷分流规则](./docs/content/docs/quick-routing-rules.mdx)。
 
 ## 🙌 社区
 

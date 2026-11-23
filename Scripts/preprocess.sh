@@ -146,8 +146,8 @@ prepare_mihomo() {
 
 prepare_icon() {
   if [ ! -f "$ICON_SOURCE" ]; then
-    echo "Warning: app icon source not found at $ICON_SOURCE"
-    return
+    echo "App icon source not found at $ICON_SOURCE" >&2
+    return 1
   fi
 
   local iconset_work_dir
@@ -166,8 +166,10 @@ prepare_icon() {
   if iconutil --convert icns "$iconset_dir" --output "$PREPROCESSED_ICON_PATH"; then
     echo "Prepared app icon: $PREPROCESSED_ICON_PATH"
   else
-    echo "Warning: failed to generate .icns from $ICON_SOURCE"
+    echo "Failed to generate .icns from $ICON_SOURCE" >&2
     rm -f "$PREPROCESSED_ICON_PATH"
+    rm -rf "$iconset_dir"
+    return 1
   fi
 
   rm -rf "$iconset_dir"

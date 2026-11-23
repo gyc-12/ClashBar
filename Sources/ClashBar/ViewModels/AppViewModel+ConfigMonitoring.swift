@@ -42,6 +42,10 @@ extension AppViewModel {
     }
 
     private func handleConfigDirectoryChangesIfNeeded() async {
+        guard !self.isQuickRuleSaving else {
+            self.scheduleConfigDirectoryRefresh(delayNanoseconds: 500_000_000)
+            return
+        }
         guard let directoryURL = self.ensureConfigDirectoryAvailable() else { return }
 
         let previousSelectedPath = self.configService.selectedConfig?.path
@@ -51,6 +55,10 @@ extension AppViewModel {
             return (files, signatures)
         }.value
         guard !Task.isCancelled else { return }
+        guard !self.isQuickRuleSaving else {
+            self.scheduleConfigDirectoryRefresh(delayNanoseconds: 500_000_000)
+            return
+        }
 
         let changedFileNames = self.changedConfigFileNames(
             previous: self.configFileSignatureSnapshot,
@@ -90,6 +98,12 @@ extension AppViewModel {
         self.pendingConfigChangeRestart = false
         self.appendLog(level: "info", message: self.tr("log.config.changed_restart"))
         await self.restartCore(trigger: .configSwitch)
+    }
+
+    func acknowledgeQuickRuleConfigWrite(_ config: URL) {
+        let signature = Self.configFileSignatureSnapshot(for: [config])
+        self.configFileSignatureSnapshot[config.lastPathComponent] = signature[config.lastPathComponent]
+        self.configDirectoryMonitor?.updateSelectedFile(self.configService.selectedConfig)
     }
 
     private nonisolated static func configFileSignatureSnapshot(for files: [URL]) -> [String: String] {

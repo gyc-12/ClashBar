@@ -3,11 +3,13 @@ import Foundation
 @MainActor
 extension AppViewModel {
     func switchToMachineTarget(_ target: MachineTarget) async {
+        guard !self.isQuickRuleSaving else { return }
         if case let .remote(machine) = target {
             let status = await self.remoteMachineStore.refreshConnectivity(for: machine)
             guard status.isConnected else { return }
         }
 
+        guard !self.isQuickRuleSaving else { return }
         self.remoteMachineStore.selectTarget(target)
 
         self.cancelPolling()
@@ -53,6 +55,7 @@ extension AppViewModel {
             self.preserveLocalSettingsOnNextSync = false
         }
 
+        self.refreshNativeRuleDocument()
         await self.refreshFromAPI(includeSlowCalls: true)
 
         if self.lastSyncedEditableSettings == nil {

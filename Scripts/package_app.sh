@@ -15,6 +15,12 @@ PREPROCESSED_MIHOMO_PATH="${PREPROCESSED_MIHOMO_PATH:-$PREPROCESS_DIR/mihomo}"
 REQUIRE_MIHOMO_BINARY="${REQUIRE_MIHOMO_BINARY:-1}"
 BUNDLE_MIHOMO_BINARY="${BUNDLE_MIHOMO_BINARY:-1}"
 
+if [ ! -s "$PREPROCESSED_ICON_PATH" ]; then
+  echo "Required preprocessed app icon is missing or empty: $PREPROCESSED_ICON_PATH" >&2
+  echo "Run make build (or make build WITH_CORE=1) to preprocess resources and package the app." >&2
+  exit 1
+fi
+
 APP="$ROOT/dist/${APP_NAME}.app"
 HELPER_LABEL="com.clashbar.helper"
 HELPER_PLIST_SOURCE="$ROOT/Sources/ProxyHelper/LaunchDaemons/${HELPER_LABEL}.plist"
@@ -243,13 +249,8 @@ print_artifact_size "Helper binary before strip" "$APP/Contents/Library/HelperTo
 strip_binary_if_enabled "Main binary" "$APP/Contents/MacOS/ClashBar"
 strip_binary_if_enabled "Helper binary" "$APP/Contents/Library/HelperTools/$HELPER_LABEL"
 
-ICON_PLIST_ENTRY=""
-if [ -f "$PREPROCESSED_ICON_PATH" ]; then
-  cp "$PREPROCESSED_ICON_PATH" "$APP/Contents/Resources/${APP_NAME}.icns"
-  ICON_PLIST_ENTRY="<key>CFBundleIconFile</key><string>${APP_NAME}.icns</string>"
-else
-  echo "Warning: preprocessed icon not found at $PREPROCESSED_ICON_PATH"
-fi
+cp "$PREPROCESSED_ICON_PATH" "$APP/Contents/Resources/${APP_NAME}.icns"
+ICON_PLIST_ENTRY="<key>CFBundleIconFile</key><string>${APP_NAME}.icns</string>"
 
 if [ "$BUNDLE_MIHOMO_BINARY" = "1" ]; then
   BUNDLES_MIHOMO_CORE_PLIST_VALUE="<true/>"
@@ -270,6 +271,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
 $ICON_PLIST_ENTRY
 <key>ClashBarBundlesMihomoCore</key>${BUNDLES_MIHOMO_CORE_PLIST_VALUE}
+<key>NSAppleEventsUsageDescription</key><string>ClashBar reads the current browser tab only when you choose to add a routing rule for that website.</string>
 <key>NSLocationWhenInUseUsageDescription</key><string>ClashBar uses your current Wi-Fi name to switch proxy config profiles automatically.</string>
 <key>NSAppTransportSecurity</key>
 <dict>

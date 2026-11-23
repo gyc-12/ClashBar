@@ -49,6 +49,7 @@ extension AppViewModel {
         successMessage: String,
         syncSystemProxyPort: Bool = true) async -> Bool
     {
+        guard !self.isQuickRuleSaving else { return false }
         self.cancelProxyPortsAutoSave()
         settingsFeedbackClearTask?.cancel()
         settingsFeedbackClearTask = nil

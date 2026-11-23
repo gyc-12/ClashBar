@@ -77,3 +77,14 @@ dmg:
 
 clean:
 	rm -rf "$(BUILD_DIR)" "$(DIST_DIR)" "$(SWIFTPM_DIR)" "$(PACKAGES_DIR)"
+
+.PHONY: spec-check graph
+spec-check:
+	DO_NOT_TRACK=1 npx --yes @fission-ai/openspec@2.0.0 validate --all --strict
+
+graph:
+	@if [ -d .codegraph ]; then \
+		DO_NOT_TRACK=1 CODEGRAPH_NO_DAEMON=1 npx --yes @colbymchenry/codegraph@1.6.2 sync; \
+	else \
+		DO_NOT_TRACK=1 CODEGRAPH_NO_DAEMON=1 npx --yes @colbymchenry/codegraph@1.6.2 init --yes; \
+	fi

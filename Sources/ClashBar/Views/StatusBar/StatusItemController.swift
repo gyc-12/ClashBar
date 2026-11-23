@@ -314,6 +314,7 @@ final class StatusItemController: NSObject {
     }
 
     private func openPopover(relativeTo button: NSStatusBarButton) {
+        self.appViewModel.rememberBrowserSource()
         self.ensurePopoverContent()
         self.refreshPopoverMaximumHeight()
         self.applyPopoverSize(
@@ -534,7 +535,8 @@ final class StatusItemController: NSObject {
         ]) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if !self.appViewModel.isPinned {
+                if !self.appViewModel.isPinned, self.appViewModel.quickRuleEditorContext == nil,
+                   !self.appViewModel.isReadingBrowser {
                     self.closePopover(nil)
                 }
             }

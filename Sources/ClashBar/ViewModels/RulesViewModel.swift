@@ -84,12 +84,15 @@ final class RulesViewModel: ObservableObject {
     @Published var filterText: String = ""
     @Published var typeFilter: RulesTypeFilter = .all
     @Published var policyFilter: RulePolicyOption = .all
+    @Published var customOnly: Bool = false
     @Published var groupByPolicy: Bool = false
+    @Published var sortByHits: Bool = false
     @Published private(set) var output: PresentRulesOutput = .empty
 
     init() {}
 
     func updateVisibleRules(items: [RuleItem], providers: [String: ProviderDetail]) {
+        let items = self.customOnly ? items.filter { $0.nativeEntry?.isCustom == true } : items
         let policyOptions = self.makePolicyOptions(from: items)
         let keyword = self.filterText.trimmed
         let policyFilter = self.policyFilter
@@ -108,7 +111,15 @@ final class RulesViewModel: ObservableObject {
         }
 
         let typeCounts = self.makeTypeCounts(from: base)
-        let filtered = typeFilter == .all ? base : base.filter { typeFilter.matches($0.type) }
+        var filtered = typeFilter == .all ? base : base.filter { typeFilter.matches($0.type) }
+        if self.sortByHits {
+            filtered = filtered.enumerated().sorted { lhs, rhs in
+                let a = lhs.element.statistics?.hitCount
+                let b = rhs.element.statistics?.hitCount
+                if a != b { return (a ?? 0) > (b ?? 0) || (a != nil && b == nil) }
+                return lhs.offset < rhs.offset
+            }.map(\.element)
+        }
 
         let next = PresentRulesOutput(
             rules: filtered,

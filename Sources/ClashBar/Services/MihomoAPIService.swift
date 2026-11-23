@@ -13,7 +13,7 @@ enum HTTPMethod: String {
     case delete = "DELETE"
 }
 
-enum JSONValue: Sendable {
+enum JSONValue: Sendable, Decodable {
     case string(String)
     case int(Int)
     case bool(Bool)
@@ -21,6 +21,17 @@ enum JSONValue: Sendable {
     case object([String: JSONValue])
     case array([JSONValue])
     case null
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let bool = try? value.decode(Bool.self) { self = .bool(bool) }
+        else if let int = try? value.decode(Int.self) { self = .int(int) }
+        else if let double = try? value.decode(Double.self) { self = .double(double) }
+        else if let string = try? value.decode(String.self) { self = .string(string) }
+        else if let object = try? value.decode([String: JSONValue].self) { self = .object(object) }
+        else { self = .array(try value.decode([JSONValue].self)) }
+    }
 
     var foundationObject: Any {
         switch self {

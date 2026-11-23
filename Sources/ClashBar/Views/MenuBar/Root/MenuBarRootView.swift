@@ -88,6 +88,32 @@ struct MenuBarRootView: TranslatingView {
             Spacer(minLength: 0)
         }
         .frame(width: T.panelWidth, alignment: .topLeading)
+        .sheet(item: self.$appViewModel.quickRuleEditorContext) { context in
+            QuickRuleEditorView(context: context)
+                .environmentObject(self.appViewModel)
+        }
+        .sheet(item: self.$appViewModel.nativeRuleEditorContext) { context in
+            NativeRuleEditorView(context: context).environmentObject(self.appViewModel)
+        }
+        .sheet(item: self.$appViewModel.applicationRuleEditorContext) { context in
+            ApplicationRuleEditorView(context: context).environmentObject(self.appViewModel)
+        }
+        .sheet(item: self.$appViewModel.connectionDetailContext, onDismiss: {
+            self.appViewModel.completeConnectionRuleNavigation()
+        }) { connection in
+            ConnectionDetailView(snapshot: connection)
+                .environmentObject(self.appViewModel)
+                .environmentObject(self.appViewModel.connectionsStore)
+                .environmentObject(self.proxyStore)
+        }
+        .sheet(isPresented: Binding(
+            get: { self.appViewModel.proxyGroupDetailName != nil },
+            set: { if !$0 { self.appViewModel.proxyGroupDetailName = nil } })) {
+                if let name = self.appViewModel.proxyGroupDetailName {
+                    ProxyGroupDetailView(name: name)
+                        .environmentObject(self.appViewModel).environmentObject(self.proxyStore)
+                }
+            }
     }
 
     private var panelSections: some View {

@@ -236,6 +236,9 @@ struct LogsTabView: TranslatingView {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contextMenu {
+            if log.source == .mihomo {
+                QuickRuleContextMenu(targets: QuickRuleTarget.from(log: log.message))
+            }
             Button {
                 self.appViewModel.copyLogMessage(log)
             } label: {

@@ -32,6 +32,7 @@ extension AppViewModel {
     }
 
     func selectConfig() async {
+        guard !self.isQuickRuleSaving else { return }
         let previousSelectedURL = configService.selectedConfig
         let previousSelectedPath = configService.selectedConfig?.path
         guard configService.chooseConfigDirectory() != nil else { return }
@@ -67,6 +68,7 @@ extension AppViewModel {
     }
 
     func selectConfigFile(named fileName: String) async {
+        guard !self.isQuickRuleSaving else { return }
         let previousSelectedURL = configService.selectedConfig
         let previousSelectedPath = configService.selectedConfig?.path
         guard let matched = configService.availableConfigs.first(where: { $0.lastPathComponent == fileName }) else {
@@ -95,6 +97,7 @@ extension AppViewModel {
             }
         }
 
+        guard !self.isQuickRuleSaving else { return }
         configService.selectConfig(matched)
         let nextSelectedPath = self.syncSelectedConfigSelection(matched)
         syncConfigDisplayState()

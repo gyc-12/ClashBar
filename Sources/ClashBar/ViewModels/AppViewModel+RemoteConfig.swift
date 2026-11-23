@@ -316,6 +316,7 @@ extension AppViewModel {
     }
 
     func reloadConfig() async {
+        guard !self.isQuickRuleSaving else { return }
         let actionName = tr("log.action_name.reload_config")
         let expectedTunEnabled = isTunEnabled
 
@@ -376,7 +377,8 @@ extension AppViewModel {
 
     @discardableResult
     func writeConfigData(_ data: Data, to targetURL: URL) throws -> Bool {
-        try configService.writeConfigData(data, to: targetURL)
+        guard !self.isQuickRuleSaving else { throw QuickRuleError.contextChanged }
+        return try configService.writeConfigData(data, to: targetURL)
     }
 
     func confirmOverwriteConfig(named fileName: String) -> Bool {

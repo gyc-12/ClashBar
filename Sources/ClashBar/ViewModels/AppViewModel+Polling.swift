@@ -95,6 +95,7 @@ extension AppViewModel {
     func setActiveMenuTab(_ tab: RootTab) {
         let changed = activeMenuTab != tab
         activeMenuTab = tab
+        if changed, tab != .rules { self.ruleNavigationIDs = [] }
         self.updateDataAcquisitionPolicy()
 
         guard changed else { return }
@@ -279,7 +280,11 @@ extension AppViewModel {
 
     func clearProxyPresentation() {
         proxyGroups = []
-        proxyDelaySamples = [:]
+        proxyLatencyHistory = [:]
+        connectionDetailContext = nil
+        proxyGroupDetailName = nil
+        ruleNavigationIDs = []
+        pendingConnectionRuleNavigation = false
         proxyNodeTypes = [:]
         groupLatencyLoading = []
         proxyLatencyTesting = []
@@ -410,7 +415,8 @@ extension AppViewModel {
                 timeout: resolvedTimeout,
                 icon: proxy.icon,
                 hidden: proxy.hidden,
-                delayHistory: proxy.delayHistory)
+                latencyHistory: proxy.latencyHistory,
+                interval: proxy.interval, lazy: proxy.lazy)
         }
 
         let sortIndex = (response.proxies["GLOBAL"]?.all ?? []) + ["GLOBAL"]
@@ -434,21 +440,21 @@ extension AppViewModel {
             }
             .map(\.element)
 
-        var delaySamples: [String: [Int]] = [:]
+        var delaySamples: [String: [ProxyLatencySample]] = [:]
         var nodeTypes: [String: String] = [:]
         for proxy in response.proxies.values {
             if proxy.all.isEmpty, let type = proxy.type.trimmedNonEmpty {
                 nodeTypes[proxy.name] = type
             }
             if !proxy.delayHistory.isEmpty {
-                delaySamples[proxy.name] = proxy.delayHistory
+                delaySamples[proxy.name] = proxy.latencyHistory
             }
         }
 
         for provider in providerLookup.values {
             for node in provider.proxies ?? [] {
                 if !node.delayHistory.isEmpty, delaySamples[node.name] == nil {
-                    delaySamples[node.name] = node.delayHistory
+                    delaySamples[node.name] = node.latencyHistory
                 }
                 if let type = node.type.trimmedNonEmpty, nodeTypes[node.name] == nil {
                     nodeTypes[node.name] = type
@@ -457,71 +463,13 @@ extension AppViewModel {
         }
 
         self.proxyGroups = groups
-        self.proxyDelaySamples = Self.mergeProxyDelaySamples(
-            api: delaySamples,
-            previous: self.proxyDelaySamples)
+        var history: [String: [ProxyLatencySample]] = [:]
+        for name in Set(response.proxies.keys).union(providerLookup.values.flatMap { ($0.proxies ?? []).map(\.name) }) {
+            let merged = ProxyLatencySample.merge(api: delaySamples[name] ?? [], previous: self.proxyLatencyHistory[name] ?? [])
+            if !merged.isEmpty { history[name] = merged }
+        }
+        self.proxyLatencyHistory = history
         self.proxyNodeTypes = nodeTypes
-    }
-
-    private static func mergeProxyDelaySamples(
-        api: [String: [Int]],
-        previous: [String: [Int]]) -> [String: [Int]]
-    {
-        var merged = api
-        for (name, existing) in previous {
-            guard !existing.isEmpty else { continue }
-            guard let apiSamples = api[name], !apiSamples.isEmpty else {
-                merged[name] = Array(existing.suffix(ProxyDelayHistory.limit))
-                continue
-            }
-            merged[name] = Self.mergeDelaySeries(api: apiSamples, previous: existing)
-        }
-        return merged
-    }
-
-    private static func mergeDelaySeries(api: [Int], previous: [Int]) -> [Int] {
-        let limit = ProxyDelayHistory.limit
-
-        func overlap(from earlier: [Int], to later: [Int]) -> Int {
-            let maximum = min(earlier.count, later.count)
-            guard maximum > 0 else { return 0 }
-            for count in stride(from: maximum, through: 1, by: -1)
-                where earlier.suffix(count).elementsEqual(later.prefix(count))
-            {
-                return count
-            }
-            return 0
-        }
-
-        let previousFollowsAPI = overlap(from: api, to: previous)
-        let apiFollowsPrevious = overlap(from: previous, to: api)
-
-        if previousFollowsAPI > apiFollowsPrevious {
-            let chosen = previous.count > previousFollowsAPI ? previous : api
-            return Array(chosen.suffix(limit))
-        }
-        if apiFollowsPrevious > previousFollowsAPI {
-            let chosen = api.count > apiFollowsPrevious ? api : previous
-            return Array(chosen.suffix(limit))
-        }
-        if previousFollowsAPI > 0 {
-            let chosen = previous.count >= api.count ? previous : api
-            return Array(chosen.suffix(limit))
-        }
-
-        if previous.last == api.last {
-            let chosen = previous.count >= api.count ? previous : api
-            return Array(chosen.suffix(limit))
-        }
-
-        if previous.count >= api.count {
-            return Array(previous.suffix(limit))
-        }
-        var stitched = api
-        if let localLast = previous.last {
-            stitched.append(localLast)
-        }
-        return Array(stitched.suffix(limit))
     }
 
     func refreshConnections() async {

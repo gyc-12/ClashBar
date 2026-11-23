@@ -1,0 +1,14 @@
+schema: spec-driven
+context: |
+  Language: zh
+  All artifacts must be written in zh.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  ClashBar 是 macOS 13+ 的 SwiftUI / AppKit 原生 mihomo 管理面板，使用 SwiftPM 构建。
+  持久化配置应保持 mihomo 原生格式，用户可以脱离 App 使用相同配置。
+  不引入 App 私有规则数据库或依赖 App 的启动时合并层。
+  使用 CodeGraph CLI 检查相关符号和调用关系，索引 .codegraph/ 不提交。
+rules:
+  design:
+    - 说明原生文件、运行态和订阅覆盖更新之间的关系。
+  tasks:
+    - 包含适当的 Swift 测试、编译与 OpenSpec 校验。

@@ -108,19 +108,36 @@ struct ConnectionMetadata: Codable, Equatable {
     let sourceIP: String?
     let destinationIP: String?
     let host: String?
+    let process: String?
+    let processPath: String?
+    let sourcePort: String?
+    let destinationPort: String?
+    let dnsMode: String?
+    let sniffHost: String?
+    let inboundName: String?
 
     private enum CodingKeys: String, CodingKey {
         case network
         case sourceIP
         case destinationIP
         case host
+        case process, processPath, sourcePort, destinationPort, dnsMode, sniffHost, inboundName
     }
 
-    init(network: String?, sourceIP: String?, destinationIP: String?, host: String?) {
+    init(network: String?, sourceIP: String?, destinationIP: String?, host: String?,
+         process: String? = nil, processPath: String? = nil, sourcePort: String? = nil,
+         destinationPort: String? = nil, dnsMode: String? = nil, sniffHost: String? = nil, inboundName: String? = nil) {
         self.network = network
         self.sourceIP = sourceIP
         self.destinationIP = destinationIP
         self.host = host
+        self.process = process
+        self.processPath = processPath
+        self.sourcePort = sourcePort
+        self.destinationPort = destinationPort
+        self.dnsMode = dnsMode
+        self.sniffHost = sniffHost
+        self.inboundName = inboundName
     }
 
     init(from decoder: Decoder) throws {
@@ -137,6 +154,13 @@ struct ConnectionMetadata: Codable, Equatable {
                 keys: ["destination_ip", "destination", "remoteIP", "remoteAddress"])
         self.host = try container.decodeIfPresent(String.self, forKey: .host).trimmedNonEmpty
             ?? ConnectionAnyCodingKey.decodeString(in: dynamic, keys: ["destinationHost", "remoteHost", "addr"])
+        self.process = container.decodeFlexibleString(forKey: .process)
+        self.processPath = container.decodeFlexibleString(forKey: .processPath)
+        self.sourcePort = container.decodeFlexibleString(forKey: .sourcePort)
+        self.destinationPort = container.decodeFlexibleString(forKey: .destinationPort)
+        self.dnsMode = container.decodeFlexibleString(forKey: .dnsMode)
+        self.sniffHost = container.decodeFlexibleString(forKey: .sniffHost)
+        self.inboundName = container.decodeFlexibleString(forKey: .inboundName)
     }
 }
 

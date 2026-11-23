@@ -64,6 +64,19 @@ final class AppViewModel: ObservableObject {
     @Published var configDirectoryPath: String = "-"
     @Published var availableConfigFileNames: [String] = []
     @Published var remoteConfigMenuStates: [String: RemoteConfigMenuState] = [:]
+    @Published var quickRuleEditorContext: QuickRuleEditorContext?
+    @Published var applicationRuleEditorContext: ApplicationRuleEditorContext?
+    @Published var isOpeningApplicationRules = false
+    @Published var nativeRuleDocument: NativeRuleDocument?
+    @Published var nativeRuleDocumentError: String?
+    @Published var nativeRuleEditorContext: NativeRuleEditorContext?
+    @Published var nativeRuleSavingIndex: Int?
+    @Published var nativeRuleSaveNotice: String?
+    var lastRuleSaveApplied = false
+    @Published var isQuickRuleSaving = false
+    @Published var isReadingBrowser = false
+    var browserSourceBundleID: String?
+
     @Published var isPinned: Bool = false
 
     func togglePinned() {
@@ -87,8 +100,12 @@ final class AppViewModel: ObservableObject {
     }
 
     var proxyDelaySamples: [String: [Int]] {
-        get { self.proxyStore.proxyDelaySamples }
-        set { self.proxyStore.proxyDelaySamples = newValue }
+        self.proxyStore.proxyDelaySamples
+    }
+
+    var proxyLatencyHistory: [String: [ProxyLatencySample]] {
+        get { self.proxyStore.proxyLatencyHistory }
+        set { self.proxyStore.proxyLatencyHistory = newValue }
     }
 
     var proxyNodeTypes: [String: String] {
@@ -195,6 +212,10 @@ final class AppViewModel: ObservableObject {
     @Published var appearanceMode: AppAppearanceMode = .system
     @Published var isPanelPresented: Bool = false
     @Published var activeMenuTab: RootTab = .proxy
+    @Published var connectionDetailContext: ConnectionSummary?
+    @Published var proxyGroupDetailName: String?
+    @Published var ruleNavigationIDs: Set<String> = []
+    var pendingConnectionRuleNavigation = false
     @Published var launchAtLoginEnabled: Bool = false
     @Published var launchAtLoginErrorMessage: String?
     @Published var latestAppReleaseInfo: AppReleaseInfo?
@@ -321,7 +342,7 @@ final class AppViewModel: ObservableObject {
     }
 
     var isModeSwitchEnabled: Bool {
-        (self.isRemoteTarget || self.processManager.isRunning) && self.apiStatus == .healthy
+        (self.isRemoteTarget || self.processManager.isRunning) && self.apiStatus == .healthy && !self.isQuickRuleSaving
     }
 
     var isTunToggleEnabled: Bool {
@@ -334,7 +355,7 @@ final class AppViewModel: ObservableObject {
     }
 
     var isCoreActionProcessing: Bool {
-        self.coreActionState != .idle
+        self.coreActionState != .idle || self.isQuickRuleSaving
     }
 
     var primaryCoreActionLabel: String {
@@ -400,7 +421,7 @@ final class AppViewModel: ObservableObject {
     var pendingConfigChangeRestart = false
     var isLatestAppReleaseCheckInFlight = false
 
-    let defaults = UserDefaults.standard
+    let defaults: UserDefaults
     @AppStorage("clashbar.auto.start.core") var autoStartCore: Bool = false
     @AppStorage("clashbar.ssid.strategy.enabled") var ssidStrategyEnabledStorage: Bool = false
     @AppStorage("clashbar.statusbar.display.mode") private var statusBarDisplayModeRaw: String = StatusBarDisplayMode
@@ -465,7 +486,8 @@ final class AppViewModel: ObservableObject {
     let bundlesMihomoCore: Bool
     var didPresentInitialNoCoreSetupGuide = false
 
-    init(dependencies: AppDependencies) {
+    init(dependencies: AppDependencies, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         self.processManager = dependencies.processManager
         self.configService = dependencies.configService
         self.systemProxyService = dependencies.systemProxyService

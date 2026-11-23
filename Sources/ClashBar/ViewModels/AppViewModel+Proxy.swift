@@ -132,15 +132,16 @@ extension AppViewModel {
     }
 
     func refreshGroupLatency(_ group: ProxyGroup) async {
+        guard !self.groupLatencyLoading.contains(group.name) else { return }
         groupLatencyLoading.insert(group.name)
         defer { groupLatencyLoading.remove(group.name) }
 
-        let testURL = group.testUrl?.trimmedNonEmpty ?? defaultHealthcheckURL
+        let testURL = self.healthcheckSettings(for: group).url ?? defaultHealthcheckURL
         let timeout = group.timeout.flatMap { $0 > 0 ? $0 : nil } ?? defaultHealthcheckTimeoutMilliseconds
         await runRefresh {
             let response: GroupDelayMeasurement = try await self.clientOrThrow().request(
                 .groupDelay(name: group.name, url: testURL, timeout: timeout))
-            self.applyMeasuredNodeDelays(response.values)
+            self.applyMeasuredNodeDelays(response.values, testURL: testURL)
         }
     }
 
@@ -172,30 +173,26 @@ extension AppViewModel {
         defer { self.proxyLatencyTesting.remove(key) }
 
         let proxyGroup = self.proxyGroups.first { $0.name == group }
-        let testURL = proxyGroup?.testUrl?.trimmedNonEmpty ?? defaultHealthcheckURL
+        let testURL = proxyGroup.flatMap { self.healthcheckSettings(for: $0).url } ?? defaultHealthcheckURL
         let timeout = proxyGroup?.timeout.flatMap { $0 > 0 ? $0 : nil } ?? defaultHealthcheckTimeoutMilliseconds
 
         await runRefresh {
             let response: DelayMeasurement = try await self.clientOrThrow().request(
                 .proxyDelay(name: node, url: testURL, timeout: timeout))
             guard let value = response.value else { return }
-            self.applyMeasuredNodeDelays([node: value])
+            self.applyMeasuredNodeDelays([node: value], testURL: testURL)
         }
     }
 
-    private func applyMeasuredNodeDelays(_ delays: [String: Int]) {
+    func applyMeasuredNodeDelays(_ delays: [String: Int], testURL: String, measuredAt: Date = Date()) {
         guard !delays.isEmpty else { return }
 
-        var samples = self.proxyDelaySamples
+        var samples = self.proxyLatencyHistory
         for (name, delay) in delays {
-            var series = samples[name] ?? []
-            series.append(delay)
-            if series.count > ProxyDelayHistory.limit {
-                series = Array(series.suffix(ProxyDelayHistory.limit))
-            }
-            samples[name] = series
+            samples[name] = ProxyLatencySample.merge(
+                api: [ProxyLatencySample(delay: delay, time: measuredAt, testURL: testURL)], previous: samples[name] ?? [])
         }
-        self.proxyDelaySamples = samples
+        self.proxyLatencyHistory = samples
     }
 
     func delayText(group: String, node: String, fallbackToGroupHistory: Bool = false) -> String {
@@ -215,14 +212,18 @@ extension AppViewModel {
     }
 
     func delaySamples(group: String, node: String, fallbackToGroupHistory: Bool = false) -> [Int] {
+        self.latencySamples(group: group, node: node, fallbackToGroupHistory: fallbackToGroupHistory).map(\.delay)
+    }
+
+    func latencySamples(group: String, node: String, fallbackToGroupHistory: Bool = false) -> [ProxyLatencySample] {
         for name in self.proxySelectionChain(startingAt: node).reversed() {
-            if let samples = self.proxyDelaySamples[name], !samples.isEmpty {
+            if let samples = self.proxyLatencyHistory[name], !samples.isEmpty {
                 return samples
             }
         }
         if fallbackToGroupHistory {
             for name in self.proxySelectionChain(startingAt: group).reversed() {
-                if let samples = self.proxyDelaySamples[name], !samples.isEmpty {
+                if let samples = self.proxyLatencyHistory[name], !samples.isEmpty {
                     return samples
                 }
             }

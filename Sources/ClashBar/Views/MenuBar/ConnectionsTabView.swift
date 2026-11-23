@@ -172,6 +172,8 @@ struct ConnectionsTabView: TranslatingView {
         .padding(.horizontal, T.space4)
         .padding(.vertical, T.space2)
         .background(nativeHoverRowBackground(hovered))
+        .contentShape(Rectangle())
+        .onTapGesture { self.appViewModel.connectionDetailContext = conn }
         .onHover { self.viewModel.hoveredConnectionID = self.nextHovered(
             current: self.viewModel.hoveredConnectionID, target: conn.id, isHovering: $0) }
         .contextMenu { self.connectionRowContextMenu(conn) }
@@ -256,6 +258,15 @@ struct ConnectionsTabView: TranslatingView {
 
     @ViewBuilder
     private func connectionRowContextMenu(_ conn: ConnectionSummary) -> some View {
+        Button(self.tr("ui.diagnostics.connection_details")) { self.appViewModel.connectionDetailContext = conn }
+        if let process = ApplicationRoutingCandidate.from(connection: conn) {
+            Button(self.tr("ui.app_rule.for_process")) {
+                Task { await self.appViewModel.openApplicationRuleEditor(selected: process) }
+            }.disabled(!self.appViewModel.canEditApplicationRules)
+                .help(self.tr(self.appViewModel.isRemoteTarget ? "ui.quick_rule.local_only" : "ui.app_rule.for_process"))
+        }
+        QuickRuleContextMenu(targets: QuickRuleTarget.from(connection: conn))
+
         Button(role: .destructive) {
             Task { await self.appViewModel.closeConnection(id: conn.id) }
         } label: {
@@ -503,6 +514,10 @@ struct ConnectionsTabView: TranslatingView {
         let rulePayload = conn.rulePayload ?? ""
         let chains = self.connectionChainsParts(conn.chains).joined(separator: " > ")
         let start = conn.start ?? ""
-        return "\(host) \(destinationIP) \(sourceIP) \(network) \(id) \(rule) \(rulePayload) \(chains) \(start)"
+        let process = conn.metadata?.process ?? ""
+        let processPath = conn.metadata?.processPath ?? ""
+        let sniffHost = conn.metadata?.sniffHost ?? ""
+        let ports = "\(conn.metadata?.sourcePort ?? "") \(conn.metadata?.destinationPort ?? "")"
+        return "\(host) \(destinationIP) \(sourceIP) \(network) \(id) \(rule) \(rulePayload) \(chains) \(start) \(process) \(processPath) \(sniffHost) \(ports)"
     }
 }

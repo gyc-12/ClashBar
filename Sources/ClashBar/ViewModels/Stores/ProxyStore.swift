@@ -15,8 +15,10 @@ final class ProxyStore: ObservableObject {
         willSet { self.publishChangeIfNeeded(current: self.proxyLatencyTesting, next: newValue) }
     }
 
-    var proxyDelaySamples: [String: [Int]] = [:] {
-        willSet { self.publishChangeIfNeeded(current: self.proxyDelaySamples, next: newValue) }
+    var proxyDelaySamples: [String: [Int]] { self.proxyLatencyHistory.mapValues { $0.map(\.delay) } }
+
+    var proxyLatencyHistory: [String: [ProxyLatencySample]] = [:] {
+        willSet { self.publishChangeIfNeeded(current: self.proxyLatencyHistory, next: newValue) }
     }
 
     var proxyNodeTypes: [String: String] = [:] {

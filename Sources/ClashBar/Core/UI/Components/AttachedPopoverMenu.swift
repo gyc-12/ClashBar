@@ -347,6 +347,9 @@ private struct SideAttachedPopoverHost<Content: View>: NSViewRepresentable {
             self.popoverRequested = popoverRequested
             self.suppressAutoOpen = suppressAutoOpen
             self.onVisibilityChanged = onVisibilityChanged
+            // 注意：这里的 Content 是一个新的 SwiftUI 根视图，不会继承调用方的环境
+            // （@EnvironmentObject / 自定义 EnvironmentValues 均不可见）。popover 内容里
+            // 如果用到这些，需要在使用处自行 .environmentObject(_:)/.environment(_:_:) 注入。
             self.hostingController = NSHostingController(rootView: content)
             self.panel = SideAttachedMenuPanel(
                 contentRect: NSRect(x: 0, y: 0, width: 240, height: 160),
