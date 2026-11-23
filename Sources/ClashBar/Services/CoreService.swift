@@ -671,7 +671,7 @@ final class MihomoProcessManager: MihomoControlling, @unchecked Sendable {
         }
     }
 
-    private static func resolveWorkingDirectoryURL(configPath: String) -> URL {
+    static func resolveWorkingDirectoryURL(configPath: String) -> URL {
         let configDirectoryURL = URL(fileURLWithPath: configPath)
             .standardizedFileURL
             .deletingLastPathComponent()

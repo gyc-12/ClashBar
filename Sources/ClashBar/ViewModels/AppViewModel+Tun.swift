@@ -14,6 +14,7 @@ enum TunModeError: LocalizedError {
 @MainActor
 extension AppViewModel {
     func toggleTunMode(_ enabled: Bool) async {
+        guard !self.isProxyProviderSaving else { return }
         guard !isTunSyncing else { return }
         guard enabled != isTunEnabled else { return }
 

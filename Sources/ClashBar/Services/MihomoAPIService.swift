@@ -185,7 +185,7 @@ enum Endpoint {
              let .proxyDelay(_, _, timeout),
              let .proxyProviderProxyHealthcheck(_, _, _, timeout):
             max(5, TimeInterval(timeout) / 1000.0 + 2)
-        case .upgradeCore, .upgradeGeo:
+        case .upgradeCore, .upgradeGeo, .putConfigs, .updateProxyProvider:
             60
         default:
             2
@@ -194,7 +194,8 @@ enum Endpoint {
 
     var usesLongRunningSession: Bool {
         switch self {
-        case .groupDelay, .proxyDelay, .proxyProviderHealthcheck, .proxyProviderProxyHealthcheck:
+        case .groupDelay, .proxyDelay, .proxyProviderHealthcheck, .proxyProviderProxyHealthcheck,
+             .putConfigs, .updateProxyProvider:
             true
         default:
             false

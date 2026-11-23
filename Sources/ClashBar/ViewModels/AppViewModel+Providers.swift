@@ -43,7 +43,7 @@ extension AppViewModel {
     }
 
     func updateProxyProvider(name: String) async {
-        guard !providerUpdating.contains(name) else { return }
+        guard !self.isQuickRuleSaving, !providerUpdating.contains(name) else { return }
         providerUpdating.insert(name)
         defer { providerUpdating.remove(name) }
 
@@ -54,18 +54,13 @@ extension AppViewModel {
             })
     }
 
-    private func mergedProviderDetailPreservingNodes(
-        previous: ProviderDetail?,
-        incoming: ProviderDetail) -> ProviderDetail
-    {
-        let incomingNodes = incoming.proxies
-        if let incomingNodes, !incomingNodes.isEmpty {
-            return incoming.with(proxies: incomingNodes)
-        }
-        if let previousNodes = previous?.proxies, !previousNodes.isEmpty {
-            return incoming.with(proxies: previousNodes)
-        }
-        return incoming.with(proxies: incomingNodes)
+    func visibleRuntimeProviders(_ providers: [String: ProviderDetail]) -> [String: ProviderDetail] {
+        providers.filter { self.shouldIncludeProxyProvider(named: $0.key, detail: $0.value) }
+    }
+
+    func publishRuntimeProxyProviders(_ providers: [String: ProviderDetail]) {
+        self.proxyProvidersDetail = providers
+        self.providerProxyCount = providers.count
     }
 
     private func shouldIncludeProxyProvider(named key: String, detail: ProviderDetail) -> Bool {
@@ -79,6 +74,7 @@ extension AppViewModel {
     }
 
     func enqueueProviderRefresh(trigger: ProviderRefreshTrigger) {
+        guard !self.isQuickRuleSaving else { return }
         self.cancelProviderRefresh(reason: "superseded")
         providerRefreshGeneration += 1
         let generation = providerRefreshGeneration
@@ -216,6 +212,8 @@ extension AppViewModel {
     }
 
     func refreshProvidersAndRules() async {
+        guard !self.isProxyProviderSaving else { return }
+        let generation = self.proxyProviderPresentationGeneration
         await runRefresh {
             let client = try self.clientOrThrow()
             async let proxyProvidersTask: ProviderSummary = client.request(.proxyProviders)
@@ -227,29 +225,12 @@ extension AppViewModel {
                 ruleProvidersTask,
                 rulesTask)
 
-            let filteredProxyProviders = proxyProviders.providers.filter { key, detail in
-                self.shouldIncludeProxyProvider(named: key, detail: detail)
-            }
-
-            let previousProxyProviders = self.proxyProvidersDetail
-            var nextProxyProviders: [String: ProviderDetail] = [:]
-            nextProxyProviders.reserveCapacity(filteredProxyProviders.count)
-            for (name, detail) in filteredProxyProviders {
-                nextProxyProviders[name] = self.mergedProviderDetailPreservingNodes(
-                    previous: previousProxyProviders[name],
-                    incoming: detail)
-            }
-
-            self.proxyProvidersDetail = nextProxyProviders
+            guard !Task.isCancelled, !self.isProxyProviderSaving, generation == self.proxyProviderPresentationGeneration else { return }
+            self.publishRuntimeProxyProviders(self.visibleRuntimeProviders(proxyProviders.providers))
             self.ruleProviders = ruleProviders.providers
             self.ruleItems = rules.rules
-
-            self.providerProxyCount = filteredProxyProviders.count
             self.providerRuleCount = ruleProviders.providers.count
             self.rulesCount = rules.totalCount
-
-            let currentNames = Set(filteredProxyProviders.keys)
-            self.providerUpdating = self.providerUpdating.intersection(currentNames)
         }
     }
 

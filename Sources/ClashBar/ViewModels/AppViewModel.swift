@@ -67,6 +67,13 @@ final class AppViewModel: ObservableObject {
     @Published var quickRuleEditorContext: QuickRuleEditorContext?
     @Published var applicationRuleEditorContext: ApplicationRuleEditorContext?
     @Published var isOpeningApplicationRules = false
+    @Published var nativeProxyProviderDocument: NativeProxyProviderDocument?
+    @Published var nativeProxyProviderError: String?
+    @Published var nativeProxyProviderNotice: String?
+    @Published var proxyProviderEditorContext: ProxyProviderEditorContext?
+    @Published var appliedProviderConfig: AppliedProviderConfig?
+    var proxyProviderPresentationGeneration = 0
+    var isProxyProviderSaving = false
     @Published var nativeRuleDocument: NativeRuleDocument?
     @Published var nativeRuleDocumentError: String?
     @Published var nativeRuleEditorContext: NativeRuleEditorContext?

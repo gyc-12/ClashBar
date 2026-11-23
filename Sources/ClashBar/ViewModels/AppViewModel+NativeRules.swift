@@ -41,6 +41,7 @@ extension AppViewModel {
     }
 
     func refreshNativeRuleDocument() {
+        self.refreshNativeProxyProviderDocument()
         guard !self.isRemoteTarget, let url = self.configService.selectedConfig else {
             self.nativeRuleDocument = nil
             self.nativeRuleDocumentError = nil
@@ -149,6 +150,7 @@ extension AppViewModel {
                         .putConfigs(force: false, path: "", payload: previousPayload))
                 }
             })
+        if client != nil, edit.provider == nil { self.updateAppliedProviderConfig(after: edit) }
         self.lastRuleSaveApplied = client != nil
         if client != nil { await self.refreshProvidersAndRules() }
         return NativeRuleSaveResult(backupURL: backup, applied: client != nil)

@@ -350,7 +350,7 @@ struct ProxyTabView: TranslatingView {
         VStack(alignment: .leading, spacing: T.space6) {
             self.trafficOverview
             self.proxyQuickRows
-            if !self.proxyStore.sortedProxyProviderNames.isEmpty {
+            if self.appViewModel.canManageProxyProviders || !self.proxyStore.sortedProxyProviderNames.isEmpty {
                 proxyProvidersSection
             }
             proxyGroupsSection

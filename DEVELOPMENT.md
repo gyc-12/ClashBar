@@ -83,3 +83,15 @@ CLASHBAR_TEST_MIHOMO=/absolute/path/to/mihomo swift test --filter ApplicationRou
 CLASHBAR_TEST_MIHOMO=/absolute/path/to/privileged/mihomo CLASHBAR_TEST_PROCESS_PRIVILEGES=1 swift test --filter ApplicationRoutingIntegrationTests
 CLASHBAR_TEST_RENDER_DIR=/tmp/clashbar-app-routing-preview swift test --filter renderApplicationRoutingForVisualReview
 ```
+
+## 代理提供商管理验证
+
+`NativeProxyProviderTests` 覆盖原生 YAML、禁用定义与多个组引用的往返、外部编辑冲突、空组回退和订阅改链。`ProxyProviderViewModelTests` 覆盖停止核心、远程目标、文件冲突及空 API 响应。
+
+`ProxyProviderIntegrationTests` 用临时目录、独立核心和 loopback 订阅、SOCKS、回显服务校验启停、组过滤、改链、空订阅以及预检成功但正式加载失败后的回滚。测试通过 `/connections` 核对两路 TCP 的 `providerChains`，观察重载后两路连接并验证 PID、监听端口和运行设置。不会访问用户控制器或修改用户配置。
+
+```sh
+swift test --filter 'NativeProxyProviderTests|ProxyProviderViewModelTests'
+CLASHBAR_TEST_MIHOMO=/absolute/path/to/mihomo swift test --filter ProxyProviderIntegrationTests
+CLASHBAR_TEST_RENDER_DIR=/tmp/clashbar-provider-preview swift test --filter ProxyProviderVisualTests
+```

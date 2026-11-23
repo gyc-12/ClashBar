@@ -5,7 +5,11 @@ private typealias T = MenuBarLayoutTokens
 
 extension ProxyTabView {
     var proxyProvidersSection: some View {
-        let providers = proxyStore.sortedProxyProviderNames
+        let document = appViewModel.nativeProxyProviderDocument
+        let entries = Dictionary(uniqueKeysWithValues: (document?.entries ?? []).map { ($0.name, $0) })
+        let usingNative = appViewModel.canManageProxyProviders && document != nil
+        let providers = usingNative ? (document?.entries.map(\.name) ?? []) : proxyStore.sortedProxyProviderNames
+        let usingRuntime = !usingNative || appViewModel.nativeProvidersMatchRunningConfig
 
         return VStack(alignment: .leading, spacing: T.space6) {
             self.nodesSectionHeader(
@@ -13,6 +17,19 @@ extension ProxyTabView {
                 symbol: "externaldrive.fill",
                 count: "\(providers.count)")
             {
+                if appViewModel.canManageProxyProviders {
+                    Button {
+                        appViewModel.openProxyProviderEditor(.add)
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.app(size: T.FontSize.body, weight: .semibold))
+                            .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!appViewModel.canStartProxyProviderEdit)
+                    .help(tr("ui.proxy_provider.add"))
+                    .accessibilityLabel(tr("ui.proxy_provider.add"))
+                }
                 let label = tr(isProxyProvidersCollapsed ? "ui.action.expand" : "ui.action.collapse")
                 Button {
                     withAnimation(.easeInOut(duration: 0.16)) {
@@ -29,19 +46,25 @@ extension ProxyTabView {
                 .help(label)
             }
 
-            if providers.isEmpty {
+            if let message = appViewModel.nativeProxyProviderError ?? appViewModel.nativeProxyProviderNotice {
+                Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, T.space4)
+            }
+            if providers.isEmpty && !isProxyProvidersCollapsed {
                 emptyCard(tr("ui.empty.proxy_providers"))
             } else if !isProxyProvidersCollapsed {
                 VStack(spacing: T.space2) {
                     ForEach(providers, id: \.self) { name in
-                        self.proxyProviderRow(name: name, detail: proxyStore.proxyProvidersDetail[name])
+                        let entry = entries[name]
+                        self.proxyProviderRow(name: name,
+                            detail: usingRuntime && entry?.enabled != false ? proxyStore.proxyProvidersDetail[name] : nil,
+                            entry: entry, usingRuntime: usingRuntime)
                     }
                 }
             }
         }
     }
 
-    func proxyProviderRow(name: String, detail: ProviderDetail?) -> some View {
+    func proxyProviderRow(name: String, detail: ProviderDetail?, entry: NativeProxyProvider?, usingRuntime: Bool) -> some View {
         let nodeCount = detail?.proxies?.count ?? 0
         let updatedText = ValueFormatter.relativeTime(from: detail?.updatedAt, language: language)
         let expireSeconds = detail?.subscriptionInfo?.expire
@@ -61,6 +84,10 @@ extension ProxyTabView {
         let updateTimeWidth: CGFloat = 44
 
         let hasSubscription = detail?.subscriptionInfo != nil
+        let status: String? = if entry?.enabled == false { tr("ui.proxy_provider.disabled") }
+            else if entry != nil && !usingRuntime { tr(appViewModel.isRuntimeRunning ? "ui.proxy_provider.pending" : "ui.proxy_provider.stopped") }
+            else if entry != nil && nodeCount == 0 { tr("ui.proxy_provider.unloaded") }
+            else { nil }
 
         return VStack(alignment: .leading, spacing: T.space6) {
             HStack(alignment: .center, spacing: T.space6) {
@@ -77,38 +104,76 @@ extension ProxyTabView {
                             .lineLimit(1)
                             .layoutPriority(1)
 
-                        Text("\(nodeCount)")
-                            .font(.app(size: T.FontSize.caption, weight: .semibold))
-                            .foregroundStyle(nativeSecondaryLabel)
-                            .fixedSize()
+                        if let status {
+                            Text(status).font(.app(size: T.FontSize.caption, weight: .regular))
+                                .foregroundStyle(nativeTertiaryLabel).lineLimit(1)
+                        } else {
+                            Text("\(nodeCount)")
+                                .font(.app(size: T.FontSize.caption, weight: .semibold))
+                                .foregroundStyle(nativeSecondaryLabel)
+                                .fixedSize()
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text(updatedText)
-                        .font(.app(size: T.FontSize.caption, weight: .regular))
-                        .foregroundStyle(nativeTertiaryLabel)
-                        .lineLimit(1)
-                        .frame(width: updateTimeWidth, alignment: .trailing)
+                    if detail != nil {
+                        Text(updatedText)
+                            .font(.app(size: T.FontSize.caption, weight: .regular))
+                            .foregroundStyle(nativeTertiaryLabel)
+                            .lineLimit(1)
+                            .frame(width: updateTimeWidth, alignment: .trailing)
+                    }
                 }
                 .frame(maxWidth: .infinity)
 
-                Button {
-                    Task { await appViewModel.updateProxyProvider(name: name) }
-                } label: {
-                    ZStack {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.app(size: T.FontSize.caption, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(nativeSecondaryLabel)
-                            .opacity(isUpdating ? 0 : 1)
-                        ProgressView()
-                            .scaleEffect(0.5)
-                            .opacity(isUpdating ? 1 : 0)
+                if detail != nil {
+                    Button {
+                        Task { await appViewModel.updateProxyProvider(name: name) }
+                    } label: {
+                        ZStack {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.app(size: T.FontSize.caption, weight: .semibold))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(nativeSecondaryLabel)
+                                .opacity(isUpdating ? 0 : 1)
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .opacity(isUpdating ? 1 : 0)
+                        }
+                        .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
                     }
-                    .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tr("ui.action.refresh"))
+                    .disabled(appViewModel.isQuickRuleSaving || isUpdating)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(tr("ui.action.refresh"))
+                if let entry {
+                    let toggleLabel = tr(entry.enabled ? "ui.proxy_provider.disable" : "ui.proxy_provider.enable")
+                    Button {
+                        appViewModel.openProxyProviderEditor(entry.enabled ? .disable : .enable, name: name)
+                    } label: {
+                        Image(systemName: entry.enabled ? "switch.2" : "power")
+                            .foregroundStyle(entry.enabled ? nativeTeal : nativeTertiaryLabel)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(toggleLabel)
+                    .accessibilityLabel(toggleLabel)
+                    .disabled(!appViewModel.canStartProxyProviderEdit)
+                    Menu {
+                        if entry.type == "http" {
+                            Button(tr("ui.proxy_provider.edit")) { appViewModel.openProxyProviderEditor(.edit, name: name) }
+                        }
+                        Button(tr("ui.proxy_provider.delete"), role: .destructive) {
+                            appViewModel.openProxyProviderEditor(.delete, name: name)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel(tr("ui.proxy_provider.manage"))
+                    .disabled(!appViewModel.canStartProxyProviderEdit)
+                }
             }
 
             if hasSubscription {
@@ -558,7 +623,11 @@ private struct FrozenPopoverNodesList<Row: View>: View {
     }
 
     var body: some View {
-        if self.frozenNodes.isEmpty {
+        let available = Set(self.nodes)
+        let retained = self.frozenNodes.filter(available.contains)
+        let known = Set(retained)
+        let current = retained + self.nodes.filter { !known.contains($0) }
+        if current.isEmpty {
             Text(self.emptyText)
                 .font(.app(size: T.FontSize.caption, weight: .regular))
                 .foregroundStyle(self.nativeSecondaryLabel)
@@ -567,7 +636,7 @@ private struct FrozenPopoverNodesList<Row: View>: View {
                 .padding(.vertical, T.space4)
         } else {
             VStack(spacing: 0) {
-                ForEach(self.frozenNodes, id: \.self) { node in
+                ForEach(current, id: \.self) { node in
                     self.row(node)
                 }
             }

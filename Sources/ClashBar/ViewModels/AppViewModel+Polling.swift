@@ -9,6 +9,7 @@ extension AppViewModel {
     }
 
     func cancelPolling() {
+        self.proxyProviderPresentationGeneration &+= 1
         self.teardownStreams()
     }
 
@@ -210,6 +211,8 @@ extension AppViewModel {
     }
 
     private func refreshMediumFrequency() async {
+        guard !self.isProxyProviderSaving else { return }
+        let generation = self.proxyProviderPresentationGeneration
         await runRefresh {
             let client = try self.clientOrThrow()
             async let versionTask: VersionInfo = client.request(.version)
@@ -225,14 +228,16 @@ extension AppViewModel {
                     proxyGroupsTask,
                     providersTask)
 
+                guard !Task.isCancelled, !self.isProxyProviderSaving, generation == self.proxyProviderPresentationGeneration else { return }
                 self.version = versionInfo.version
                 self.applyRuntimeConfigSnapshot(configSnapshot)
                 self.noteProxyProvidersAPIAvailability(error: providersResult.error)
                 self.applyProxyGroupsResponse(
                     resolvedGroups,
-                    proxyProviders: providersResult.providers)
+                    proxyProviders: providersResult.error == nil ? providersResult.providers : nil)
             } else {
                 let (versionInfo, configSnapshot) = try await (versionTask, configTask)
+                guard !Task.isCancelled, !self.isProxyProviderSaving, generation == self.proxyProviderPresentationGeneration else { return }
                 self.version = versionInfo.version
                 self.applyRuntimeConfigSnapshot(configSnapshot)
             }
@@ -279,6 +284,7 @@ extension AppViewModel {
     }
 
     func clearProxyPresentation() {
+        self.proxyProviderPresentationGeneration &+= 1
         proxyGroups = []
         proxyLatencyHistory = [:]
         connectionDetailContext = nil
@@ -372,14 +378,17 @@ extension AppViewModel {
     }
 
     func refreshProxyGroups() async {
+        guard !self.isProxyProviderSaving else { return }
+        let generation = self.proxyProviderPresentationGeneration
         await runRefresh {
             let client = try self.clientOrThrow()
             async let groupsTask: ProxyGroupsResponse = client.request(.proxies)
             async let providersTask = self.fetchProxyProvidersSummarySafely(client: client)
 
             let (resolvedGroups, providersResult) = try await (groupsTask, providersTask)
+            guard !Task.isCancelled, !self.isProxyProviderSaving, generation == self.proxyProviderPresentationGeneration else { return }
             self.noteProxyProvidersAPIAvailability(error: providersResult.error)
-            self.applyProxyGroupsResponse(resolvedGroups, proxyProviders: providersResult.providers)
+            self.applyProxyGroupsResponse(resolvedGroups, proxyProviders: providersResult.error == nil ? providersResult.providers : nil)
         }
     }
 
@@ -395,11 +404,12 @@ extension AppViewModel {
         }
     }
 
-    private func applyProxyGroupsResponse(
+    func applyProxyGroupsResponse(
         _ response: ProxyGroupsResponse,
-        proxyProviders: [String: ProviderDetail] = [:])
+        proxyProviders: [String: ProviderDetail]?)
     {
-        let providerLookup = proxyProviders.isEmpty ? self.proxyProvidersDetail : proxyProviders
+        let providerLookup = proxyProviders ?? self.proxyProvidersDetail
+        if let proxyProviders { self.publishRuntimeProxyProviders(self.visibleRuntimeProviders(proxyProviders)) }
         let proxiesWithHealthcheckConfig = response.proxies.values.map { proxy in
             let provider = providerLookup[proxy.name]
             let resolvedTestURL = proxy.testUrl?.trimmedNonEmpty ?? provider?.testUrl?.trimmedNonEmpty

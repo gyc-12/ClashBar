@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 extension AppViewModel {
     func switchMode(to target: CoreMode) async {
+        guard !self.isProxyProviderSaving else { return }
         if !isModeSwitchEnabled || modeSwitchInFlight || target == currentMode {
             return
         }
@@ -125,6 +126,7 @@ extension AppViewModel {
     }
 
     func switchProxy(group: String, target: String) async {
+        guard !self.isQuickRuleSaving else { return }
         await runNoResponseAction(tr("log.action_name.switch_proxy", group, target)) {
             try await self.clientOrThrow().requestNoResponse(.switchProxy(name: group, target: target))
             await self.refreshProxyGroups()
@@ -132,7 +134,8 @@ extension AppViewModel {
     }
 
     func refreshGroupLatency(_ group: ProxyGroup) async {
-        guard !self.groupLatencyLoading.contains(group.name) else { return }
+        guard !self.isQuickRuleSaving, !self.groupLatencyLoading.contains(group.name) else { return }
+        let generation = self.proxyProviderPresentationGeneration
         groupLatencyLoading.insert(group.name)
         defer { groupLatencyLoading.remove(group.name) }
 
@@ -141,6 +144,7 @@ extension AppViewModel {
         await runRefresh {
             let response: GroupDelayMeasurement = try await self.clientOrThrow().request(
                 .groupDelay(name: group.name, url: testURL, timeout: timeout))
+            guard generation == self.proxyProviderPresentationGeneration else { return }
             self.applyMeasuredNodeDelays(response.values, testURL: testURL)
         }
     }
@@ -167,7 +171,8 @@ extension AppViewModel {
 
     func refreshProxyLatency(group: String, node: String) async {
         let key = ProxyLatencyTestKey(group: group, node: node)
-        guard !self.proxyLatencyTesting.contains(key) else { return }
+        guard !self.isQuickRuleSaving, !self.proxyLatencyTesting.contains(key) else { return }
+        let generation = self.proxyProviderPresentationGeneration
 
         self.proxyLatencyTesting.insert(key)
         defer { self.proxyLatencyTesting.remove(key) }
@@ -179,7 +184,7 @@ extension AppViewModel {
         await runRefresh {
             let response: DelayMeasurement = try await self.clientOrThrow().request(
                 .proxyDelay(name: node, url: testURL, timeout: timeout))
-            guard let value = response.value else { return }
+            guard generation == self.proxyProviderPresentationGeneration, let value = response.value else { return }
             self.applyMeasuredNodeDelays([node: value], testURL: testURL)
         }
     }

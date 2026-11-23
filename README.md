@@ -113,11 +113,15 @@ brew uninstall --zap --cask clashbar
 
 | 页面           | 内容                                            |
 | -------------- | ----------------------------------------------- |
-| 🧭 Proxy       | 配置、模式、系统代理、节点切换、延迟与 Provider |
+| 🧭 Proxy       | 配置、模式、系统代理、节点切换、延迟与代理提供商管理 |
 | 📚 Rules       | 规则统计、筛选、Provider 更新、快捷添加分流规则 |
 | 🌐 Connections | 连接过滤与关闭                                  |
 | 🪵 Logs        | 级别过滤、关键词检索                            |
 | ⚙️ System      | 语言、状态栏、端口、`allow-lan` / `ipv6` 等     |
+
+在 **Proxy → 代理提供商** 点 `+` 添加 mihomo 节点订阅。每行可刷新、启停，或通过 `…` 修改链接和删除。禁用后仍可在面板找到该提供商；应用后，它的节点退出代理组。禁用信息存在原 YAML 的注释里，配置可脱离 ClashBar 使用。操作导致组没有可用节点时，面板会要求选择回退。
+
+本地配置支持管理，远程核心支持查看和刷新。应用属于同一进程内的配置重载，经代理提供商的连接可能断开。更新整份配置订阅可能覆盖这些本地改动。
 
 📁 运行时数据目录：`~/Library/Application Support/clashbar`  
 🧩 内置内核会复制到：`~/Library/Application Support/clashbar/core/mihomo`

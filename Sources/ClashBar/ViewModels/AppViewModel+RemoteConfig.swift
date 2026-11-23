@@ -136,7 +136,7 @@ extension AppViewModel {
     }
 
     func deleteConfigFile(named fileName: String) async {
-        guard self.confirmDeleteConfig(named: fileName) else { return }
+        guard !self.isQuickRuleSaving, self.confirmDeleteConfig(named: fileName) else { return }
         guard let configDirectory = ensureConfigDirectoryAvailable() else { return }
 
         let targetURL = configDirectory.appendingPathComponent(fileName, isDirectory: false)
@@ -316,7 +316,7 @@ extension AppViewModel {
     }
 
     func reloadConfig() async {
-        guard !self.isQuickRuleSaving else { return }
+        guard !self.isCoreActionProcessing else { return }
         let actionName = tr("log.action_name.reload_config")
         let expectedTunEnabled = isTunEnabled
 
@@ -326,7 +326,17 @@ extension AppViewModel {
                 appendLog(level: "error", message: tr("log.start.no_config"))
                 return
             }
+            guard !self.isRemoteTarget, !self.isCoreActionProcessing else { return }
+            let url = URL(fileURLWithPath: configPath)
+            let baseline = try? Data(contentsOf: url)
+            self.coreActionState = .restarting
+            defer { self.coreActionState = .idle }
+            self.proxyProviderPresentationGeneration &+= 1
             try await self.clientOrThrow().requestNoResponse(.putConfigs(force: false, path: configPath, payload: nil))
+            if !self.isRemoteTarget, self.processManager.isRunning {
+                self.rememberAppliedProviderConfig(url: url, data: baseline == (try? Data(contentsOf: url)) ? baseline : nil)
+                self.refreshNativeProxyProviderDocument()
+            }
             try await self.restoreTunAfterConfigReloadIfNeeded(expectedEnabled: expectedTunEnabled)
             appendLog(level: "info", message: tr("log.action.success", actionName))
         } catch {

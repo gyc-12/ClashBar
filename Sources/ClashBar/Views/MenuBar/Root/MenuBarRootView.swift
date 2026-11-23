@@ -92,6 +92,9 @@ struct MenuBarRootView: TranslatingView {
             QuickRuleEditorView(context: context)
                 .environmentObject(self.appViewModel)
         }
+        .sheet(item: self.$appViewModel.proxyProviderEditorContext) { context in
+            ProxyProviderEditorView(context: context).environmentObject(self.appViewModel)
+        }
         .sheet(item: self.$appViewModel.nativeRuleEditorContext) { context in
             NativeRuleEditorView(context: context).environmentObject(self.appViewModel)
         }

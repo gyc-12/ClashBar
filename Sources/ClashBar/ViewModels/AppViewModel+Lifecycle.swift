@@ -53,7 +53,10 @@ extension AppViewModel {
 
             let launchController = applyExternalControllerFromSelectedConfigFile(configPath: configPath)
             statusText = "Starting"
+            let url = URL(fileURLWithPath: configPath)
+            let baseline = try? Data(contentsOf: url)
             _ = try await self.processManager.start(configPath: configPath, controller: launchController)
+            self.rememberAppliedProviderConfig(url: url, data: baseline == (try? Data(contentsOf: url)) ? baseline : nil)
 
             await self.completeCoreBootstrap(
                 configPath: configPath,
@@ -104,6 +107,7 @@ extension AppViewModel {
         self.cancelDeferredEditableSettingsOverlaySync()
         cancelProviderRefresh(reason: "stop requested")
         await self.processManager.stop()
+        self.appliedProviderConfig = nil
         cancelPolling()
         statusText = "Stopped"
         apiStatus = .unknown
@@ -136,7 +140,10 @@ extension AppViewModel {
                 transitionKind: .restart,
                 disableRuntimeTunBeforeStop: false)
             let settingsOverlay = self.overlayApplyingPendingCoreFeatureRecovery(currentEditableSettingsSnapshot())
+            let url = URL(fileURLWithPath: configPath)
+            let baseline = try? Data(contentsOf: url)
             _ = try await self.processManager.restart(configPath: configPath, controller: launchController)
+            self.rememberAppliedProviderConfig(url: url, data: baseline == (try? Data(contentsOf: url)) ? baseline : nil)
             await self.completeCoreBootstrap(
                 configPath: configPath,
                 settingsOverlay: settingsOverlay,
