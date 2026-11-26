@@ -51,6 +51,7 @@ struct MenuBarRootView: TranslatingView {
     @EnvironmentObject var remoteMachineStore: RemoteMachineStore
     @EnvironmentObject var popoverLayoutModel: PopoverLayoutModel
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     @StateObject var rootViewModel = ProxyGroupsViewModel()
     @Namespace var segmentedSelectionNamespace
@@ -69,7 +70,7 @@ struct MenuBarRootView: TranslatingView {
         false
 
     var contentWidth: CGFloat {
-        T.panelWidth - (T.space8 * 2)
+        T.contentWidth
     }
 
     func setCurrentTabWithoutAnimation(_ tab: RootTab) {
@@ -147,7 +148,7 @@ struct MenuBarRootView: TranslatingView {
     private var styledPanelContent: some View {
         self.panelSections
             .frame(width: self.contentWidth, alignment: .topLeading)
-            .padding(.horizontal, T.space8)
+            .padding(.horizontal, T.panelInset)
             .frame(
                 width: T.panelWidth,
                 height: resolvedPanelHeight,
@@ -247,7 +248,8 @@ struct MenuBarRootView: TranslatingView {
     @ViewBuilder
     func tabContent(for tab: RootTab) -> some View {
         let content = self.tabBody(for: tab)
-            .padding(.top, T.space2)
+            .padding(.top, T.space10)
+            .padding(.bottom, T.space10)
 
         if self.tabUsesDynamicHeight(tab) {
             content.fixedSize(horizontal: false, vertical: true)

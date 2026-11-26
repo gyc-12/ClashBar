@@ -6,7 +6,7 @@ extension MenuBarRootView {
     }
 
     private var hasResolvedCurrentTabLayout: Bool {
-        self.hasMeasuredFixedSections && self.currentTabContentHeight > 0
+        self.hasMeasuredFixedSections && (!self.tabUsesDynamicHeight(self.rootViewModel.currentTab) || self.currentTabContentHeight > 0)
     }
 
     private var fixedSectionHeight: CGFloat {
@@ -23,6 +23,7 @@ extension MenuBarRootView {
 
     var tabScrollAreaHeight: CGFloat {
         guard self.hasResolvedCurrentTabLayout else { return self.fallbackTabScrollAreaHeight }
+        if !self.tabUsesDynamicHeight(self.rootViewModel.currentTab) { return self.availableTabScrollAreaHeight }
         return min(max(1, self.currentTabContentHeight), self.availableTabScrollAreaHeight)
     }
 

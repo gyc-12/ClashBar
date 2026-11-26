@@ -195,14 +195,19 @@ struct ApplicationRuleViewModelTests {
         let curl = ApplicationRoutingCandidate(name: "curl", processName: "curl", processPath: "/usr/bin/curl", bundlePath: nil)
         let context = ApplicationRuleEditorContext(document: try #require(model.nativeRuleDocument), selected: chrome,
             observed: [chrome, curl], processMode: "off", fileProcessMode: "off", isSubscription: true)
+        model.controller = "127.0.0.1:1"
+        model.statusBarDisplayMode = .iconOnly
         for language in AppLanguage.allCases {
             model.uiLanguage = language
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-                let size = CGSize(width: 460, height: 690)
+                let size = CGSize(width: MenuBarLayoutTokens.Sheet.wideWidth, height: MenuBarLayoutTokens.Sheet.tallHeight)
                 let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                defer { window.contentView = nil; window.close() }
                 window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
                 let view = ApplicationRuleEditorView(context: context, applications: [chrome, curl]).environmentObject(model)
-                    .environment(\.colorScheme, scheme).background(scheme == .light ? Color.white : Color.black)
+                    .environment(\.colorScheme, scheme).defaultAppStorage(model.defaults)
+                    .background(Color(nsColor: .windowBackgroundColor))
                 let host = NSHostingView(rootView: view)
                 window.contentView = host
                 host.frame = NSRect(origin: .zero, size: size)

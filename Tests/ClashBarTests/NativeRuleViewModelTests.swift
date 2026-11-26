@@ -135,18 +135,21 @@ struct NativeRuleViewModelTests {
         let model = environment.model
         let document = try #require(model.nativeRuleDocument)
         let context = NativeRuleEditorContext(document: document, entry: document.entries[1], isSubscription: true)
+        model.controller = "127.0.0.1:1"
+        model.statusBarDisplayMode = .iconOnly
         for language in AppLanguage.allCases {
             model.uiLanguage = language
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
                 try self.render(
-                    NativeRuleEditorView(context: context).environmentObject(model).environment(\.colorScheme, scheme),
-                    size: CGSize(width: 440, height: 660), scheme: scheme,
+                    NativeRuleEditorView(context: context).environmentObject(model).environment(\.colorScheme, scheme)
+                        .defaultAppStorage(model.defaults),
+                    size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.tallHeight), scheme: scheme,
                     path: directory.appendingPathComponent("native-editor-\(language.rawValue)-\(name).png"))
                 try self.render(
                     ScrollView { RulesTabView().environmentObject(model).environmentObject(model.proxyStore) }
                         .environment(
-                            \.colorScheme, scheme),
-                    size: CGSize(width: 350, height: 480), scheme: scheme,
+                            \.colorScheme, scheme).defaultAppStorage(model.defaults),
+                    size: CGSize(width: MenuBarLayoutTokens.contentWidth, height: 480), scheme: scheme,
                     path: directory.appendingPathComponent("native-rules-\(language.rawValue)-\(name).png"))
             }
         }
@@ -155,8 +158,10 @@ struct NativeRuleViewModelTests {
     private func render<Content: View>(_ content: Content, size: CGSize, scheme: ColorScheme, path: URL) throws {
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
         window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
-        let host = NSHostingView(rootView: content.background(scheme == .light ? Color.white : Color.black))
+        let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)))
         window.contentView = host
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()

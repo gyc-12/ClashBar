@@ -95,29 +95,11 @@ struct AttachedPopoverMenu<Label: View, Content: View>: View {
     @ViewBuilder
     var popoverContent: some View {
         if self.shouldBuildPopoverContent {
-            ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 0) {
-                    self.content {
-                        self.dismissPopover()
-                    }
+            AttachedPopoverSurface(width: self.width, maxHeight: self.maxHeight) {
+                self.content {
+                    self.dismissPopover()
                 }
             }
-            .scrollIndicators(.hidden)
-            .frame(width: self.width, alignment: .leading)
-            .frame(maxHeight: self.maxHeight)
-            .padding(T.space8)
-            .background {
-                AppMaterialSurface(
-                    cornerRadius: T.panelCornerRadius,
-                    fallbackStyle: .material(.regularMaterial),
-                    stroke: self.nativeSeparator.opacity(0.46),
-                    lineWidth: T.stroke)
-            }
-            .shadow(
-                color: self.nativeShadow.opacity(T.Shadow.standard.opacity),
-                radius: T.Shadow.standard.radius,
-                x: T.Shadow.standard.x,
-                y: T.Shadow.standard.y)
         }
     }
 
@@ -144,6 +126,35 @@ struct AttachedPopoverMenu<Label: View, Content: View>: View {
         self.isPopoverRequested = false
         self.suppressAutoOpen = true
         self.isAnchorHovered = false
+    }
+}
+
+struct AttachedPopoverSurface<Content: View>: View {
+    let width: CGFloat?
+    let maxHeight: CGFloat?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 0, content: self.content)
+        }
+        .scrollIndicators(.hidden)
+        .padding(T.space8)
+        // AppKit treats these dimensions as the outer panel bounds, including padding.
+        .frame(width: self.width, alignment: .leading)
+        .frame(maxHeight: self.maxHeight)
+        .background {
+            AppMaterialSurface(
+                cornerRadius: T.panelCornerRadius,
+                fallbackStyle: .material(.regularMaterial),
+                stroke: self.nativeSeparator.opacity(0.46),
+                lineWidth: T.stroke)
+        }
+        .shadow(
+            color: self.nativeShadow.opacity(T.Shadow.standard.opacity),
+            radius: T.Shadow.standard.radius,
+            x: T.Shadow.standard.x,
+            y: T.Shadow.standard.y)
     }
 }
 

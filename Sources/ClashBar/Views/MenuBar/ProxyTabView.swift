@@ -51,6 +51,8 @@ struct ProxyTabView: TranslatingView {
     @State var copiedProxyCommandTarget: ProxyCommandCopyTarget?
     @State var proxyCommandCopyResetTask: Task<Void, Never>?
     @State var hoveredProviderName: String?
+    @State var hoveredProxyGroupName: String?
+    @FocusState var focusedProxyGroupName: String?
 
     var body: some View {
         self.proxyTabBody
@@ -86,7 +88,7 @@ struct ProxyTabView: TranslatingView {
     }
 
     var quickRowTrailingColumnWidth: CGFloat {
-        let contentWidth = T.panelWidth - (T.space8 * 2)
+        let contentWidth = T.contentWidth - T.space8 * 2
         return min(170, max(126, contentWidth * 0.44))
     }
 
@@ -347,7 +349,7 @@ struct ProxyTabView: TranslatingView {
     }
 
     var proxyTabBody: some View {
-        VStack(alignment: .leading, spacing: T.space6) {
+        VStack(alignment: .leading, spacing: T.sectionSpacing) {
             self.trafficOverview
             self.proxyQuickRows
             if self.appViewModel.canManageProxyProviders || !self.proxyStore.sortedProxyProviderNames.isEmpty {
@@ -359,82 +361,42 @@ struct ProxyTabView: TranslatingView {
     }
 
     var trafficOverview: some View {
-        let sparklineHeight: CGFloat = 64
-        let sparklineHorizontalInset = T.space4
-
-        return ZStack {
-            TrafficSparklineView(
-                upValues: self.trafficStore.trafficHistoryUp,
-                downValues: self.trafficStore.trafficHistoryDown)
-                .frame(height: sparklineHeight)
-                .padding(.horizontal, sparklineHorizontalInset)
-
-            VStack(spacing: 0) {
-                HStack(spacing: T.space6) {
-                    self.cornerMetric(
-                        symbol: "link",
-                        value: "\(self.connectionsStore.connectionsCount)",
-                        color: nativeIndigo)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    self.cornerMetric(
-                        symbol: "arrow.up.circle",
-                        value: ValueFormatter.speedAndTotal(
-                            rate: self.trafficStore.traffic.up,
-                            total: self.trafficStore.displayUpTotal),
-                        color: nativeInfo,
-                        iconTrailing: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: T.space6) {
-                    self.cornerMetric(
-                        symbol: "memorychip",
-                        value: ValueFormatter.bytesInteger(self.trafficStore.memory.inuse),
-                        color: nativeTeal)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    self.cornerMetric(
-                        symbol: "arrow.down.circle",
-                        value: ValueFormatter.speedAndTotal(
-                            rate: self.trafficStore.traffic.down,
-                            total: self.trafficStore.displayDownTotal),
-                        color: nativePositive.opacity(T.Opacity.solid),
-                        iconTrailing: true)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+        VStack(alignment: .leading, spacing: T.space10) {
+            HStack(alignment: .top, spacing: T.space12) {
+                self.trafficMetric(title: self.tr("ui.traffic.download"), symbol: "arrow.down", tint: self.nativePositive,
+                                   rate: self.trafficStore.traffic.down, total: self.trafficStore.displayDownTotal)
+                Divider().frame(height: 52)
+                self.trafficMetric(title: self.tr("ui.traffic.upload"), symbol: "arrow.up", tint: self.nativeInfo,
+                                   rate: self.trafficStore.traffic.up, total: self.trafficStore.displayUpTotal)
             }
-            .padding(.horizontal, T.space4)
-            .padding(.vertical, T.space2)
+            HStack(spacing: T.space10) {
+                Label(self.tr("ui.traffic.connections", self.connectionsStore.connectionsCount), systemImage: "link")
+                Spacer(minLength: 0)
+                Label(ValueFormatter.bytesInteger(self.trafficStore.memory.inuse), systemImage: "memorychip")
+                    .help(self.tr("ui.traffic.memory"))
+                    .accessibilityLabel(self.tr("ui.traffic.memory") + ": " + ValueFormatter.bytesInteger(self.trafficStore.memory.inuse))
+            }
+            .font(.app(size: T.FontSize.caption, weight: .medium))
+            .foregroundStyle(.secondary)
+            TrafficSparklineView(upValues: self.trafficStore.trafficHistoryUp, downValues: self.trafficStore.trafficHistoryDown)
+                .frame(height: 58)
         }
-        .frame(height: sparklineHeight)
-        .padding(.top, T.space2)
+        .appSectionCard(padding: T.space12)
     }
 
-    func cornerMetric(
-        symbol: String,
-        value: String,
-        color: Color,
-        iconTrailing: Bool = false) -> some View
-    {
-        let icon = Image(systemName: symbol)
-            .font(.app(size: T.FontSize.caption, weight: .semibold))
-            .foregroundStyle(color)
-        let text = Text(value)
-            .font(.app(size: T.FontSize.body, weight: .regular))
-            .foregroundStyle(nativeSecondaryLabel)
-            .lineLimit(1)
-            .minimumScaleFactor(T.minimumScale)
-
-        return HStack(spacing: iconTrailing ? T.space1 : T.space2) {
-            if iconTrailing {
-                text; icon
-            } else {
-                icon; text
-            }
+    private func trafficMetric(title: String, symbol: String, tint: Color, rate: Int64, total: Int64) -> some View {
+        VStack(alignment: .leading, spacing: T.space4) {
+            Label(title, systemImage: symbol)
+                .font(.app(size: T.FontSize.caption, weight: .medium)).foregroundStyle(tint)
+            Text(ValueFormatter.speed(rate))
+                .font(.appMono(size: T.FontSize.title2, weight: .semibold))
+                .lineLimit(1).minimumScaleFactor(T.minimumScale)
+            Text(self.tr("ui.traffic.total", ValueFormatter.bytesCompact(total)))
+                .font(.app(size: T.FontSize.caption)).foregroundStyle(.secondary)
+                .lineLimit(1).minimumScaleFactor(T.minimumScale)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     var proxyQuickRows: some View {
@@ -442,80 +404,106 @@ struct ProxyTabView: TranslatingView {
         let managedTargetDisplay = self.appViewModel.managedEndpointProxyCommandTargetDisplay()
         let showManagedTargetAction = localTargetDisplay != managedTargetDisplay
 
-        return VStack(spacing: 0) {
-            if self.appViewModel.isRemoteTarget {
-                self.quickRowContent(
-                    title: self.tr("ui.quick.switch_config"),
-                    symbol: "doc.text",
-                    foreground: nativePurple)
-                {
-                    Text(self.tr("ui.machine.remote_readonly"))
-                        .font(.app(size: T.FontSize.caption, weight: .regular))
-                        .lineLimit(1)
-                        .foregroundStyle(nativeTertiaryLabel)
+        return VStack(spacing: T.space10) {
+            HStack(alignment: .top, spacing: T.space10) {
+                QuickToggleTile(title: self.tr("ui.quick.system_proxy"),
+                                state: self.tr(self.proxyStore.isProxySyncing ? "ui.quick.applying" : self.appViewModel.isSystemProxyEnabled ? "ui.quick.on" : "ui.quick.off"),
+                                tint: self.nativeInfo,
+                                isOn: Binding(get: { self.appViewModel.isSystemProxyEnabled }, set: { value in
+                                    Task { await self.appViewModel.toggleSystemProxy(value) }
+                                }), disabled: self.proxyStore.isProxySyncing) {
+                    self.systemProxyCompositeIcon
+                } accessory: {
+                    if let scope = self.systemProxyScopeLabel {
+                        Text(scope).foregroundStyle(self.shouldShowSystemProxyRemoteWarning ? self.nativeWarning : self.nativeSecondaryLabel)
+                            .help(self.tr("ui.system_proxy.remote_target_warning"))
+                    }
                 }
-            } else {
-                AttachedPopoverMenu(
-                    onWillPresent: {
-                        self.appViewModel.refreshRemoteConfigMenuStates()
-                    },
-                    label: { _ in
-                        self.quickRowContent(
-                            title: self.tr("ui.quick.switch_config"),
-                            symbol: "doc.text",
-                            foreground: nativePurple)
-                        {
-                            HStack(spacing: T.space2) {
+                QuickToggleTile(title: self.tr("ui.quick.tun_mode"),
+                                state: self.tr(self.appViewModel.isTunSyncing ? "ui.quick.applying" : self.appViewModel.isTunEnabled ? "ui.quick.on" : "ui.quick.off"),
+                                tint: self.nativeTeal,
+                                isOn: Binding(get: { self.appViewModel.isTunEnabled }, set: { value in
+                                    Task { await self.appViewModel.toggleTunMode(value) }
+                                }), disabled: !self.appViewModel.isTunToggleEnabled) {
+                    IconBadge(symbol: "shield.lefthalf.filled", tint: self.nativeTeal)
+                } accessory: {
+                    self.tunStackMenu
+                }
+            }
+            if let failure = self.systemProxyInlineFailureText {
+                SheetNote(text: failure, tint: self.nativeWarning, symbol: "exclamationmark.triangle")
+                    .padding(.horizontal, T.space4)
+            }
+            VStack(spacing: 0) {
+                if self.appViewModel.isRemoteTarget {
+                    self.quickRowContent(title: self.tr("ui.quick.switch_config"), symbol: "doc.text", foreground: self.nativePurple) {
+                        Text(self.tr("ui.machine.remote_readonly"))
+                            .font(.app(size: T.FontSize.caption)).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                } else {
+                    AttachedPopoverMenu(onWillPresent: { self.appViewModel.refreshRemoteConfigMenuStates() }) { _ in
+                        self.quickRowContent(title: self.tr("ui.quick.switch_config"), symbol: "doc.text", foreground: self.nativePurple) {
+                            HStack(spacing: T.space4) {
                                 Text(self.appViewModel.selectedConfigName)
-                                    .font(.app(size: T.FontSize.caption, weight: .regular))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                    .foregroundStyle(nativeSecondaryLabel)
-                                Image(systemName: "chevron.right")
-                                    .font(.app(size: T.FontSize.caption, weight: .medium))
-                                    .foregroundStyle(nativeTertiaryLabel)
+                                    .font(.app(size: T.FontSize.callout)).foregroundStyle(.secondary)
+                                    .lineLimit(1).truncationMode(.middle)
+                                Image(systemName: "chevron.right").font(.app(size: T.FontSize.micro, weight: .semibold)).foregroundStyle(.secondary)
                             }
                         }
-                    },
-                    content: { dismiss in
+                    } content: { dismiss in
                         self.configMenuContent(dismiss: dismiss)
-                    })
-                    .buttonStyle(.plain)
-            }
-
-            self.systemProxyQuickToggleRow
-
-            self.tunModeQuickToggleRow
-
-            self.quickRowContent(
-                title: self.tr("ui.quick.copy_terminal"),
-                symbol: "terminal",
-                foreground: nativeWarning,
-                trailingFitsContent: true)
-            {
-                HStack(spacing: T.space2) {
-                    self.proxyCommandActionButton(
-                        title: self.appViewModel.localProxyCommandHostDisplay(),
-                        target: .local,
-                        helpTitle: self.tr("ui.quick.copy_terminal"),
-                        helpDetail: localTargetDisplay)
-                    {
-                        self.appViewModel.copyLocalProxyCommand()
                     }
-
-                    if showManagedTargetAction {
-                        self.proxyCommandActionButton(
-                            title: self.appViewModel.managedEndpointProxyCommandHostDisplay(),
-                            target: .currentEndpoint,
-                            helpTitle: self.tr("ui.quick.copy_terminal_current_endpoint"),
-                            helpDetail: managedTargetDisplay)
-                        {
-                            self.appViewModel.copyManagedEndpointProxyCommand()
+                    .disabled(self.appViewModel.isQuickRuleSaving)
+                }
+                Divider().opacity(0.5).padding(.leading, 32)
+                self.quickRowContent(title: self.tr("ui.quick.terminal"), symbol: "terminal", foreground: self.nativeWarning,
+                                     trailingFitsContent: true) {
+                    HStack(spacing: T.space4) {
+                        self.proxyCommandActionButton(title: self.appViewModel.localProxyCommandHostDisplay(), target: .local,
+                                                      helpTitle: self.tr("ui.quick.copy_terminal"), helpDetail: localTargetDisplay) {
+                            self.appViewModel.copyLocalProxyCommand()
+                        }
+                        if showManagedTargetAction {
+                            self.proxyCommandActionButton(title: self.appViewModel.managedEndpointProxyCommandHostDisplay(), target: .currentEndpoint,
+                                                          helpTitle: self.tr("ui.quick.copy_terminal_current_endpoint"), helpDetail: managedTargetDisplay) {
+                                self.appViewModel.copyManagedEndpointProxyCommand()
+                            }
                         }
                     }
                 }
             }
+            .appSectionCard(padding: T.space8)
         }
+    }
+
+    private var tunStackMenu: some View {
+        Menu {
+            ForEach(Self.tunStackOptions, id: \.self) { option in
+                let unsupported = option == "mips" && !self.appViewModel.isMipsStackSupported
+                Button {
+                    Task { await self.appViewModel.selectTunStack(option) }
+                } label: {
+                    if self.appViewModel.tunStack?.caseInsensitiveCompare(option) == .orderedSame {
+                        Label(option, systemImage: "checkmark")
+                    } else {
+                        Text(option)
+                    }
+                }
+                .disabled(unsupported || !self.appViewModel.isTunToggleEnabled)
+                .help(unsupported ? self.tr("app.tun.mips_requires_upgrade", AppViewModel.mipsStackMinimumCoreVersion) : self.tr("ui.quick.tun_stack_switch_hint"))
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(self.appViewModel.tunStack?.trimmedNonEmpty ?? "system")
+                    .font(.appMono(size: T.FontSize.caption))
+                Image(systemName: "chevron.down").font(.app(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(self.appViewModel.isTunEnabled ? self.nativeTeal : self.nativeSecondaryLabel)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .disabled(!self.appViewModel.isTunToggleEnabled)
+        .help(self.tr("ui.quick.tun_stack_switch_hint"))
+        .accessibilityLabel(self.tr("ui.quick.tun_stack"))
     }
 
     func proxyCommandActionButton(
@@ -540,7 +528,7 @@ struct ProxyTabView: TranslatingView {
         } label: {
             HStack(spacing: T.space4) {
                 Text(title)
-                    .font(.app(size: T.FontSize.caption, weight: .medium))
+                    .font(.appMono(size: T.FontSize.caption, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .minimumScaleFactor(T.minimumScale)
@@ -568,14 +556,6 @@ struct ProxyTabView: TranslatingView {
         .help("\(helpTitle)\n\(helpDetail)")
     }
 
-    var systemProxyRowDetailText: String? {
-        if let failureHint = self.systemProxyInlineFailureText {
-            return failureHint
-        }
-
-        return nil
-    }
-
     func quickRowContent(
         title: String,
         symbol: String,
@@ -601,67 +581,8 @@ struct ProxyTabView: TranslatingView {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, T.space4)
-        .padding(.vertical, T.space2)
-    }
-
-    var systemProxyRowTitle: String {
-        if let scopeLabel = self.systemProxyScopeLabel {
-            return "\(self.tr("ui.quick.system_proxy")) (\(scopeLabel))"
-        }
-        return self.tr("ui.quick.system_proxy")
-    }
-
-    var systemProxyRowDetailColor: Color {
-        if self.systemProxyInlineFailureText != nil {
-            return nativeWarning.opacity(T.Opacity.solid)
-        }
-        return nativeSecondaryLabel
-    }
-
-    var systemProxyQuickToggleRow: some View {
-        HStack(spacing: T.space6) {
-            self.systemProxyCompositeIcon
-            HStack(spacing: T.space2) {
-                Text(self.systemProxyRowTitle)
-                    .font(.app(size: T.FontSize.body, weight: .medium))
-                    .foregroundStyle(nativePrimaryLabel)
-                    .lineLimit(1)
-                    .minimumScaleFactor(T.minimumScale)
-
-                if self.shouldShowSystemProxyRemoteWarning {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .foregroundStyle(nativeWarning.opacity(T.Opacity.solid))
-                        .help(self.tr("ui.system_proxy.remote_target_warning"))
-                        .accessibilityLabel(self.tr("ui.system_proxy.remote_target_warning"))
-                }
-            }
-
-            if let detailText = self.systemProxyRowDetailText {
-                Text(detailText)
-                    .font(.app(size: T.FontSize.caption, weight: .medium))
-                    .foregroundStyle(self.systemProxyRowDetailColor)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .minimumScaleFactor(T.minimumScale)
-            }
-
-            Spacer(minLength: 0)
-            Toggle("", isOn: Binding(
-                get: { self.appViewModel.isSystemProxyEnabled },
-                set: { value in
-                    Task { await self.appViewModel.toggleSystemProxy(value) }
-                }))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(self.proxyStore.isProxySyncing)
-                .frame(width: 50, alignment: .trailing)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, T.space4)
-        .padding(.vertical, T.space2)
+        .padding(.horizontal, T.space2)
+        .padding(.vertical, T.space6)
     }
 
     var systemProxyInlineFailureText: String? {
@@ -685,79 +606,8 @@ struct ProxyTabView: TranslatingView {
 
     static let tunStackOptions = ["system", "gvisor", "mixed", "mips"]
 
-    var tunModeQuickToggleRow: some View {
-        self.quickRowContent(
-            title: self.tr("ui.quick.tun_mode"),
-            symbol: "shield.lefthalf.filled",
-            foreground: nativePositive,
-            trailingFitsContent: true)
-        {
-            HStack(spacing: T.space4) {
-                HStack(spacing: T.space2) {
-                    ForEach(Self.tunStackOptions, id: \.self) { option in
-                        self.tunStackChip(option)
-                    }
-                }
-                Toggle("", isOn: Binding(
-                    get: { self.appViewModel.isTunEnabled },
-                    set: { value in
-                        Task { await self.appViewModel.toggleTunMode(value) }
-                    }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .disabled(!self.appViewModel.isTunToggleEnabled)
-            }
-        }
-    }
-
-    func tunStackChip(_ option: String) -> some View {
-        let active = self.appViewModel.isTunEnabled
-            && self.appViewModel.tunStack?.caseInsensitiveCompare(option) == .orderedSame
-        let mipsUnsupported = option.caseInsensitiveCompare("mips") == .orderedSame
-            && !self.appViewModel.isMipsStackSupported
-        let enabled = self.appViewModel.isTunToggleEnabled && !mipsUnsupported
-        let hint = mipsUnsupported
-            ? self.tr("app.tun.mips_requires_upgrade", AppViewModel.mipsStackMinimumCoreVersion)
-            : self.tr("ui.quick.tun_stack_switch_hint")
-        let fill = active ? self.nativePositive.opacity(T.Opacity.tint) : self.nativeBadgeFill
-        let border = active
-            ? self.nativePositive.opacity(0.18)
-            : self.nativeControlBorder.opacity(0.42)
-        let foreground = active ? self.nativePositive.opacity(T.Opacity.solid) : self.nativeSecondaryLabel
-
-        let activate = {
-            guard enabled else { return }
-            Task { await self.appViewModel.selectTunStack(option) }
-        }
-
-        return Text(option)
-            .font(.app(size: T.FontSize.caption, weight: active ? .semibold : .medium))
-            .foregroundStyle(foreground)
-            .lineLimit(1)
-            .padding(.horizontal, T.space4)
-            .padding(.vertical, T.space2)
-            .background {
-                Capsule(style: .continuous)
-                    .fill(fill)
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .stroke(border, lineWidth: T.stroke)
-                    }
-            }
-            .contentShape(Capsule(style: .continuous))
-            .opacity(enabled ? 1 : 0.5)
-            .onTapGesture(count: 2, perform: activate)
-            .help(hint)
-            .accessibilityLabel(option)
-            .accessibilityHint(hint)
-    }
-
     func quickIcon(symbol: String, foreground: Color) -> some View {
-        Image(systemName: symbol)
-            .font(.app(size: T.FontSize.body, weight: .semibold))
-            .foregroundStyle(foreground)
-            .frame(width: 18, height: 18, alignment: .center)
+        IconBadge(symbol: symbol, tint: foreground)
     }
 
     var systemProxyCompositeIcon: some View {
@@ -769,7 +619,8 @@ struct ProxyTabView: TranslatingView {
                 tint: self.systemProxyHelperProcessTint,
                 alignment: .trailing)
         }
-        .frame(width: 18, height: 18)
+        .frame(width: 24, height: 24)
+        .background(self.nativeInfo.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .help(self.systemProxyCompositeIconHelp)
     }
 

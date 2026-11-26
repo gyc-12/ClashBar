@@ -211,17 +211,19 @@ struct ProxyProviderVisualTests {
         model.refreshNativeRuleDocument()
         let context = ProxyProviderEditorContext(document: disabled.document, operation: .add, entry: nil,
                                                 isSubscription: true, willReload: true)
+        model.controller = "127.0.0.1:1"
+        model.statusBarDisplayMode = .iconOnly
         for language in AppLanguage.allCases {
             model.uiLanguage = language
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-                try render(ProxyProviderEditorView(context: context).environmentObject(model),
-                           size: CGSize(width: 405, height: 320), scheme: scheme,
+                try render(ProxyProviderEditorView(context: context).environmentObject(model).defaultAppStorage(model.defaults),
+                           size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: 460), scheme: scheme,
                            path: directory.appendingPathComponent("provider-editor-\(language.rawValue)-\(name).png"))
                 try render(ScrollView {
                     ProxyTabView(rootViewModel: ProxyGroupsViewModel())
                         .environmentObject(model).environmentObject(model.proxyStore)
                         .environmentObject(model.trafficStore).environmentObject(model.connectionsStore)
-                }, size: CGSize(width: 360, height: 460), scheme: scheme,
+                }.defaultAppStorage(model.defaults), size: CGSize(width: MenuBarLayoutTokens.contentWidth, height: 680), scheme: scheme,
                            path: directory.appendingPathComponent("provider-list-\(language.rawValue)-\(name).png"))
             }
         }
@@ -230,10 +232,12 @@ struct ProxyProviderVisualTests {
     private func render<V: View>(_ view: V, size: CGSize, scheme: ColorScheme, path: URL) throws {
         let frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
         window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
         let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme)
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(scheme == .light ? Color.white : Color.black))
+            .background(Color(nsColor: .windowBackgroundColor)))
         window.contentView = host
         host.frame = frame
         host.layoutSubtreeIfNeeded()

@@ -41,25 +41,20 @@ struct QuickRuleEditorView: TranslatingView {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label(self.tr("ui.quick_rule.title"), systemImage: "arrow.triangle.branch")
-                .font(.headline)
-            Text(self.context.configURL.lastPathComponent)
-                .font(.caption).foregroundStyle(.secondary)
-            ScrollView {
+        ModalSheetContainer(title: self.tr("ui.quick_rule.title"), subtitle: self.context.configURL.lastPathComponent,
+                            symbol: "arrow.triangle.branch") {
+            VStack(alignment: .leading, spacing: MenuBarLayoutTokens.space12) {
+                if let notice = self.context.notice { self.note(notice) }
                 VStack(alignment: .leading, spacing: 12) {
-                    if let notice = self.context.notice { self.note(notice) }
                     self.field(self.tr("ui.quick_rule.destination")) {
                         Picker(self.tr("ui.quick_rule.destination"), selection: self.$providerName) {
                             Text(self.tr("ui.quick_rule.native_rules")).tag("")
-                            ForEach(self.context.providers) { provider in
-                                Text(provider.name).tag(provider.name)
-                            }
+                            ForEach(self.context.providers) { provider in Text(provider.name).tag(provider.name) }
                         }.labelsHidden()
                     }
                     self.field(self.tr("ui.quick_rule.target")) {
                         TextField(self.tr("ui.quick_rule.target_placeholder"), text: self.$target)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.roundedBorder).font(.appMono(size: MenuBarLayoutTokens.FontSize.callout))
                     }
                     self.field(self.tr("ui.quick_rule.type")) {
                         Picker(self.tr("ui.quick_rule.type"), selection: self.$type) {
@@ -79,59 +74,50 @@ struct QuickRuleEditorView: TranslatingView {
                         }
                     }
                     if self.type == .domainSuffix { self.note(self.tr("ui.quick_rule.suffix_hint")) }
+                }
+                .appSectionCard(padding: 12)
+                .disabled(self.appViewModel.isQuickRuleSaving || self.saved)
+                VStack(alignment: .leading, spacing: 10) {
                     self.field(self.tr("ui.quick_rule.preview")) {
-                        Text(self.preview ?? self.tr("ui.quick_rule.error.target"))
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                        Text(self.preview ?? self.tr("ui.quick_rule.error.target")).appCodeBlock()
                     }
-                    if self.provider == nil {
-                        self.note(self.tr("ui.quick_rule.native_hint"))
-                    } else {
-                        self.note(self.tr("ui.quick_rule.provider_hint"))
-                    }
+                    self.note(self.tr(self.provider == nil ? "ui.quick_rule.native_hint" : "ui.quick_rule.provider_hint"))
                     if self.context.isSubscription {
-                        Label(self.tr("ui.quick_rule.subscription_hint"), systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                        SheetNote(text: self.tr("ui.quick_rule.subscription_hint"), tint: self.nativeWarning, symbol: "exclamationmark.triangle")
                     }
                     if self.appViewModel.currentMode != .rule { self.note(self.tr("ui.quick_rule.mode_hint")) }
                 }
-                .disabled(self.appViewModel.isQuickRuleSaving || self.saved)
-            }
-            if let errorMessage {
-                Text(errorMessage).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if self.saved {
-                Label(
-                    self.tr(self.savedWhileRunning ? "ui.quick_rule.saved" : "ui.native_rule.saved_file"),
-                    systemImage: "checkmark.circle"
-                )
-                .font(.caption).foregroundStyle(.green)
-                if let backupURL {
-                    Button(self.tr("ui.quick_rule.show_backup")) {
-                        NSWorkspace.shared.activateFileViewerSelecting([backupURL])
+                .appSectionCard(padding: 12)
+                if let errorMessage {
+                    SheetNote(text: errorMessage, tint: self.nativeCritical, symbol: "exclamationmark.triangle")
+                }
+                if self.saved {
+                    SheetNote(text: self.tr(self.savedWhileRunning ? "ui.quick_rule.saved" : "ui.native_rule.saved_file"),
+                              tint: self.nativePositive, symbol: "checkmark.circle.fill")
+                    if let backupURL {
+                        Button(self.tr("ui.quick_rule.show_backup")) { NSWorkspace.shared.activateFileViewerSelecting([backupURL]) }
+                            .font(.app(size: MenuBarLayoutTokens.FontSize.subheadline))
                     }
-                    .font(.caption)
                 }
             }
-            HStack {
+        } footer: {
+            HStack(spacing: 8) {
+                if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
                 Spacer()
                 if self.saved {
                     Button(self.tr("ui.action.close")) { self.dismiss() }.keyboardShortcut(.defaultAction)
+                        .appBorderedButtonStyle(prominent: true)
                 } else {
                     Button(self.tr("ui.action.cancel")) { self.dismiss() }
                         .keyboardShortcut(.cancelAction).disabled(self.appViewModel.isQuickRuleSaving)
+                        .appBorderedButtonStyle()
                     Button(self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.quick_rule.save" : "ui.native_rule.save_file")) { self.save() }
                         .keyboardShortcut(.defaultAction)
+                        .appBorderedButtonStyle(prominent: true)
                         .disabled(self.preview == nil || !self.appViewModel.canEditQuickRules)
-                    if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
                 }
             }
         }
-        .padding(20)
-        .frame(width: 420, height: 600)
         .interactiveDismissDisabled(self.appViewModel.isQuickRuleSaving)
         .onChange(of: self.target) { text in
             guard let target = QuickRuleTarget.parse(text) else { return }
@@ -144,16 +130,11 @@ struct QuickRuleEditorView: TranslatingView {
         }
     }
 
-    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            content()
-        }
+    private func field<Content: View>(_ label: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        SheetField(title: label, content: content)
     }
 
-    private func note(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-    }
+    private func note(_ text: String) -> some View { SheetNote(text: text) }
 
     private func save() {
         guard let rule else { return }

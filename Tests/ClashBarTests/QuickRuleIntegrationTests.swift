@@ -140,25 +140,33 @@ struct QuickRuleIntegrationTests {
             isSubscription: true,
             notice: "请确认域名及目标策略。"
         )
-        // Construct the view model without start(): no core launch, proxy changes, or background polling.
+        // Isolate configuration and defaults; never discover the user's running core.
         #expect(L10n.t("ui.quick_rule.title", language: .en) == "Add Routing Rule")
-        let model = AppViewModel(dependencies: .live)
+        let environment = try NativeRuleTestEnvironment()
+        defer { environment.model.cancelPolling(); environment.clean() }
+        let model = environment.model
+        model.controller = "127.0.0.1:1"
+        model.statusBarDisplayMode = .iconOnly
         for language in AppLanguage.allCases {
             model.uiLanguage = language
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
                 let content = QuickRuleEditorView(context: context)
                     .environmentObject(model).environment(\.colorScheme, scheme)
-                    .background(scheme == .light ? Color.white : Color.black)
+                    .defaultAppStorage(model.defaults)
+                    .background(Color(nsColor: .windowBackgroundColor))
+                let size = CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.height)
                 let window = NSWindow(
-                    contentRect: NSRect(x: 0, y: 0, width: 420, height: 600),
+                    contentRect: NSRect(origin: .zero, size: size),
                     styleMask: [.borderless],
                     backing: .buffered,
                     defer: false
                 )
+                window.isReleasedWhenClosed = false
+                defer { window.contentView = nil; window.close() }
                 window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
                 let host = NSHostingView(rootView: content)
                 window.contentView = host
-                host.frame = NSRect(x: 0, y: 0, width: 420, height: 600)
+                host.frame = NSRect(origin: .zero, size: size)
                 host.layoutSubtreeIfNeeded()
                 RunLoop.main.run(until: Date().addingTimeInterval(0.15))
                 host.layoutSubtreeIfNeeded()

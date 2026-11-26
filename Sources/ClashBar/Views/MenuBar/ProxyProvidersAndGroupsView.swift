@@ -47,10 +47,10 @@ extension ProxyTabView {
             }
 
             if let message = appViewModel.nativeProxyProviderError ?? appViewModel.nativeProxyProviderNotice {
-                Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, T.space4)
+                SheetNote(text: message).padding(.horizontal, T.space4)
             }
             if providers.isEmpty && !isProxyProvidersCollapsed {
-                emptyCard(tr("ui.empty.proxy_providers"))
+                SheetNote(text: tr("ui.empty.proxy_providers")).padding(.vertical, T.space8)
             } else if !isProxyProvidersCollapsed {
                 VStack(spacing: T.space2) {
                     ForEach(providers, id: \.self) { name in
@@ -62,6 +62,7 @@ extension ProxyTabView {
                 }
             }
         }
+        .appSectionCard()
     }
 
     func proxyProviderRow(name: String, detail: ProviderDetail?, entry: NativeProxyProvider?, usingRuntime: Bool) -> some View {
@@ -105,13 +106,9 @@ extension ProxyTabView {
                             .layoutPriority(1)
 
                         if let status {
-                            Text(status).font(.app(size: T.FontSize.caption, weight: .regular))
-                                .foregroundStyle(nativeTertiaryLabel).lineLimit(1)
+                            SemanticTag(text: status, tint: entry?.enabled == false ? nativeSecondaryLabel : nativeWarning, monospaced: false)
                         } else {
-                            Text("\(nodeCount)")
-                                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                                .foregroundStyle(nativeSecondaryLabel)
-                                .fixedSize()
+                            SemanticTag(text: "\(nodeCount)", tint: nativeTeal).fixedSize()
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,7 +186,7 @@ extension ProxyTabView {
                                 "\(ValueFormatter.bytesCompactNoSpace(used)) / " +
                                 "\(ValueFormatter.bytesCompactNoSpace(total))"
                             Text(quotaText)
-                                .font(.app(size: T.FontSize.caption, weight: .regular))
+                                .font(.appMono(size: T.FontSize.caption))
                                 .foregroundStyle(nativeSecondaryLabel)
                                 .lineLimit(1)
                         }
@@ -198,14 +195,14 @@ extension ProxyTabView {
                     if let usedRatio {
                         GeometryReader { geo in
                             ZStack(alignment: .leading) {
-                                Capsule().fill(nativeControlFill.opacity(T.Opacity.solid))
+                                Capsule().fill(Color.primary.opacity(0.065))
                                 Capsule()
                                     .fill((usedRatio >= 0.9 ? nativeCritical : usedRatio >= 0.75 ? nativeWarning :
                                             nativeAccent).opacity(T.Opacity.solid))
                                     .frame(width: geo.size.width * usedRatio)
                             }
                         }
-                        .frame(height: T.space6)
+                        .frame(height: T.space4)
                     }
                 }
                 .padding(.leading, T.rowLeadingIcon + T.space6)
@@ -214,6 +211,7 @@ extension ProxyTabView {
         }
         .padding(.horizontal, rowHorizontalPadding)
         .padding(.vertical, T.space6)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
         .background(nativeHoverRowBackground(hovered))
         .onHover { hoveredProviderName = self.nextHovered(
             current: hoveredProviderName,
@@ -327,7 +325,7 @@ extension ProxyTabView {
             }
 
             if groups.isEmpty {
-                emptyCard(tr("ui.empty.proxy_groups"))
+                SheetNote(text: tr("ui.empty.proxy_groups")).padding(.vertical, T.space8)
             } else {
                 VStack(spacing: T.space2) {
                     ForEach(groups, id: \.name) { group in
@@ -336,156 +334,115 @@ extension ProxyTabView {
                 }
             }
         }
+        .appSectionCard()
     }
 
     func proxyGroupInlineRow(_ group: ProxyGroup) -> some View {
         let currentNode = group.now ?? tr("ui.common.na")
-        let delaySamples = appViewModel.delaySamples(
-            group: group.name,
-            node: currentNode,
-            fallbackToGroupHistory: true)
-        let delayValue = delaySamples.last
-        let delayText = appViewModel.delayText(
-            group: group.name,
-            node: currentNode,
-            fallbackToGroupHistory: true)
-        let nodeCount = group.all.count
+        let delaySamples = appViewModel.delaySamples(group: group.name, node: currentNode, fallbackToGroupHistory: true)
+        let delayText = appViewModel.delayText(group: group.name, node: currentNode, fallbackToGroupHistory: true)
         let iconURL = self.proxyGroupIconURL(group)
-        let hasLeadingIcon = iconURL != nil
-        let rowHorizontalPadding = T.space4
-        let rowVerticalPadding: CGFloat = T.space1
+        let hovered = hoveredProxyGroupName == group.name
+        let focused = focusedProxyGroupName == group.name
+        let testing = proxyStore.groupLatencyLoading.contains(group.name)
+        let revealed = hovered || focused || testing
 
-        return AttachedPopoverMenu { isHovered in
-            GeometryReader { geo in
-                let columns = self.proxyGroupMainColumnWidths(
-                    totalWidth: geo.size.width,
-                    hasLeadingIcon: hasLeadingIcon)
-                HStack(spacing: T.space1) {
-                    if let iconURL {
-                        self.proxyGroupLeadingIcon(iconURL)
-                    }
-
-                    Text(group.name)
-                        .font(.app(size: T.FontSize.body, weight: .semibold))
-                        .foregroundStyle(nativePrimaryLabel)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .minimumScaleFactor(T.minimumScale)
-                        .frame(width: columns.name, alignment: .leading)
-
-                    Text(currentNode)
-                        .font(.app(size: T.FontSize.caption, weight: .medium))
-                        .foregroundStyle(nativeSecondaryLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .minimumScaleFactor(T.minimumScale)
-                        .padding(.horizontal, T.space4)
-                        .padding(.vertical, T.space1)
-                        .background(nativeBadgeCapsule())
-                        .frame(width: columns.current, alignment: .leading)
-
-                    VStack(alignment: .trailing, spacing: 1) {
-                        if delayValue != nil {
-                            delayBadge(
-                                samples: delaySamples,
-                                fallbackText: delayText,
-                                showsHistory: showLatencyHistory)
-                        } else {
-                            Text(delayText)
-                                .font(.app(size: T.FontSize.caption, weight: .regular))
-                                .foregroundStyle(latencyColor(delayValue))
-                                .lineLimit(1)
-                                .minimumScaleFactor(T.minimumScale)
+        return HStack(spacing: T.space4) {
+            AttachedPopoverMenu(width: 320) { _ in
+                GeometryReader { geo in
+                    let columns = self.proxyGroupMainColumnWidths(totalWidth: geo.size.width)
+                    HStack(spacing: T.space6) {
+                        Group {
+                            if let iconURL {
+                                self.proxyGroupLeadingIcon(iconURL)
+                            } else {
+                                Image(systemName: "point.3.connected.trianglepath.dotted")
+                                    .font(.app(size: T.FontSize.callout)).foregroundStyle(self.nativeIndigo)
+                            }
                         }
-                        LatencyAgeView(
-                            sample: appViewModel.latencySamples(group: group.name, node: currentNode, fallbackToGroupHistory: true).last,
-                            language: language, interval: group.interval)
+                        .frame(width: 18).accessibilityHidden(true)
+                        Text(group.name)
+                            .font(.app(size: T.FontSize.body, weight: .semibold))
+                            .foregroundStyle(nativePrimaryLabel).lineLimit(1).truncationMode(.tail)
+                            .frame(width: columns.name, alignment: .leading)
+                        Text(currentNode)
+                            .font(.app(size: T.FontSize.subheadline)).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                            .frame(width: columns.current, alignment: .trailing)
+                        self.delayBadge(samples: delaySamples, fallbackText: delayText, showsHistory: showLatencyHistory)
+                            .frame(width: columns.delay, alignment: .trailing)
+                            .overlay(alignment: .bottomTrailing) {
+                                LatencyAgeView(sample: appViewModel.latencySamples(group: group.name, node: currentNode, fallbackToGroupHistory: true).last,
+                                               language: language, interval: group.interval)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .offset(y: 12).opacity(revealed ? 1 : 0).accessibilityHidden(!revealed)
+                            }
                     }
-                    .frame(width: columns.delay, alignment: .trailing)
-
-                    self.providerActionButton(
-                        .healthcheck,
-                        isLoading: proxyStore.groupLatencyLoading.contains(group.name))
-                    {
+                    .frame(maxHeight: .infinity, alignment: .center)
+                }
+                .frame(height: 40)
+                .contentShape(Rectangle())
+                .help(group.name + "\n" + currentNode + " · " + delayText)
+            } content: { dismiss in
+                self.popoverHeader(name: group.name, count: group.all.count) {
+                    if let iconURL {
+                        // The attached menu has its own hosting controller and needs the icon environment.
+                        self.proxyGroupLeadingIcon(iconURL)
+                            .environmentObject(self.appViewModel)
+                            .environment(\.proxyGroupIconCache, self.appViewModel.proxyGroupIconCache)
+                    }
+                } trailing: {
+                    Button {
+                        dismiss()
+                        self.appViewModel.proxyGroupDetailName = group.name
+                    } label: { Image(systemName: "info.circle") }
+                        .buttonStyle(.plain).help(tr("ui.diagnostics.group_details"))
+                        .accessibilityLabel(tr("ui.diagnostics.group_details"))
+                    self.providerActionButton(.healthcheck, isLoading: testing) {
                         await appViewModel.refreshGroupLatency(group)
                     }
-                    .frame(width: 18, alignment: .center)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                SheetNote(text: tr("ui.diagnostics.popover_note"))
+                    .padding(.horizontal, T.space4).padding(.bottom, T.space6)
+                let nodes = sortGroupNodesByLatency ? self.sortedGroupNodes(group) : self.defaultGroupNodes(group)
+                FrozenPopoverNodesList(nodes: nodes, emptyText: tr("ui.common.na")) { node in
+                    let samples = appViewModel.delaySamples(group: group.name, node: node)
+                    ProxyGroupPopoverNodeItem(title: node, typeText: proxyStore.proxyNodeTypes[node].trimmedNonEmpty,
+                                              delayText: appViewModel.delayText(group: group.name, node: node),
+                                              delaySamples: samples,
+                                              latestSample: appViewModel.latencySamples(group: group.name, node: node).last,
+                                              language: language, isTesting: appViewModel.isProxyLatencyTesting(group: group.name, node: node),
+                                              selected: node == group.now, testLatencyLabel: tr("ui.action.test_latency"),
+                                              onTestLatency: { await appViewModel.refreshProxyLatency(group: group.name, node: node) },
+                                              action: {
+                                                  dismiss()
+                                                  Task { await appViewModel.switchProxy(group: group.name, target: node) }
+                                              })
+                }
             }
-            .frame(height: 30)
-            .padding(.horizontal, rowHorizontalPadding)
-            .padding(.vertical, rowVerticalPadding)
-            .background(nativeHoverRowBackground(isHovered))
-        } content: { dismiss in
-            self.popoverHeader(name: group.name, count: nodeCount) {
-                if let iconURL {
-                    // 该 popover 内容由独立的 NSHostingController 承载，不会继承主界面的环境，
-                    // 而 ProxyGroupIconView 依赖 AppViewModel 与图标缓存，必须在这里显式注入。
-                    self.proxyGroupLeadingIcon(iconURL)
-                        .environmentObject(self.appViewModel)
-                        .environment(\.proxyGroupIconCache, self.appViewModel.proxyGroupIconCache)
-                }
-            } trailing: {
-                Button {
-                    dismiss()
-                    self.appViewModel.proxyGroupDetailName = group.name
-                } label: { Image(systemName: "info.circle") }
-                    .buttonStyle(.plain).help(tr("ui.diagnostics.group_details"))
-                self.providerActionButton(
-                    .healthcheck,
-                    isLoading: proxyStore.groupLatencyLoading.contains(group.name))
-                {
-                    await appViewModel.refreshGroupLatency(group)
-                }
-                .help(tr("ui.action.test_latency"))
+            .focused($focusedProxyGroupName, equals: group.name)
+            .accessibilityAction(named: Text(tr("ui.action.test_latency"))) {
+                Task { await appViewModel.refreshGroupLatency(group) }
             }
-
-            Text(tr("ui.diagnostics.popover_note"))
-                .font(.system(size: 9)).foregroundStyle(.secondary)
-                .padding(.horizontal, T.space4).padding(.bottom, 4)
-
-            let nodes = sortGroupNodesByLatency
-                ? self.sortedGroupNodes(group)
-                : self.defaultGroupNodes(group)
-            FrozenPopoverNodesList(nodes: nodes, emptyText: tr("ui.common.na")) { node in
-                let nodeSamples = appViewModel.delaySamples(group: group.name, node: node)
-                let nodeDelay = nodeSamples.last
-                ProxyGroupPopoverNodeItem(
-                    title: node,
-                    typeText: proxyStore.proxyNodeTypes[node].trimmedNonEmpty,
-                    delayText: appViewModel.delayText(group: group.name, node: node),
-                    delaySamples: nodeSamples,
-                    latestSample: appViewModel.latencySamples(group: group.name, node: node).last,
-                    language: language,
-                    delayColor: latencyColor(nodeDelay),
-                    isTesting: appViewModel.isProxyLatencyTesting(group: group.name, node: node),
-                    selected: node == group.now,
-                    testLatencyLabel: tr("ui.action.test_latency"),
-                    onTestLatency: {
-                        await appViewModel.refreshProxyLatency(group: group.name, node: node)
-                    },
-                    action: {
-                        dismiss()
-                        Task { await appViewModel.switchProxy(group: group.name, target: node) }
-                    })
+            .contextMenu {
+                Button(tr("ui.action.test_latency")) { Task { await appViewModel.refreshGroupLatency(group) } }
+                Button(tr("ui.diagnostics.group_details")) { appViewModel.proxyGroupDetailName = group.name }
+            }
+            self.compactAsyncIconButton(symbol: "gauge", label: tr("ui.action.test_latency"), tint: nativeTeal,
+                                        isLoading: testing, size: 22, fontSize: T.FontSize.callout, isRevealed: revealed) {
+                await appViewModel.refreshGroupLatency(group)
             }
         }
+        .padding(.horizontal, T.space4)
+        .background(nativeHoverRowBackground(hovered || focused))
+        .onHover { hoveredProxyGroupName = self.nextHovered(current: hoveredProxyGroupName, target: group.name, isHovering: $0) }
     }
 
-    func proxyGroupMainColumnWidths(
-        totalWidth: CGFloat,
-        hasLeadingIcon: Bool) -> (name: CGFloat, current: CGFloat, delay: CGFloat)
-    {
-        let iconWidth: CGFloat = hasLeadingIcon ? T.rowLeadingIcon : 0
-        let actionWidth: CGFloat = 18
-        let spacingCount: CGFloat = hasLeadingIcon ? 4 : 3
-        let spacing = T.space1 * spacingCount
-        let available = max(0, totalWidth - iconWidth - actionWidth - spacing)
-        let name = floor(available * 0.34)
-        let delay = floor(available * 0.20)
-        let current = max(0, available - name - delay)
-        return (name, current, delay)
+    private func proxyGroupMainColumnWidths(totalWidth: CGFloat) -> (name: CGFloat, current: CGFloat, delay: CGFloat) {
+        let available = max(0, totalWidth - 18 - T.space6 * 3)
+        let delay = min(available, showLatencyHistory ? 78 : 60)
+        let name = floor((available - delay) * 0.46)
+        return (name, max(0, available - delay - name), delay)
     }
 
     func proxyGroupLeadingIcon(_ iconURL: URL) -> some View {
@@ -501,40 +458,9 @@ extension ProxyTabView {
         return URL(string: icon)
     }
 
-    func nodesSectionHeader(
-        _ title: String,
-        symbol: String,
-        count: String? = nil,
-        @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View
-    {
-        HStack(spacing: T.space6) {
-            Image(systemName: symbol)
-                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                .foregroundStyle(nativeTertiaryLabel)
-                .frame(
-                    width: T.rowLeadingIcon,
-                    height: T.rowLeadingIcon,
-                    alignment: .center)
-
-            Text(title)
-                .font(.app(size: T.FontSize.body, weight: .bold))
-                .foregroundStyle(nativeTertiaryLabel)
-                .textCase(.uppercase)
-
-            if let count {
-                Text(count)
-                    .font(.app(size: T.FontSize.caption, weight: .bold))
-                    .foregroundStyle(nativeSecondaryLabel)
-                    .padding(.horizontal, T.space4)
-                    .padding(.vertical, T.space1)
-                    .background(nativeBadgeCapsule())
-            }
-
-            Spacer(minLength: 0)
-            trailing()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, T.space4)
+    func nodesSectionHeader(_ title: String, symbol: String, count: String? = nil,
+                            @ViewBuilder trailing: @escaping () -> some View = { EmptyView() }) -> some View {
+        AppSectionHeader(title, symbol: symbol, count: count, trailing: trailing)
     }
 
     func popoverHeader(
@@ -644,14 +570,13 @@ private struct FrozenPopoverNodesList<Row: View>: View {
     }
 }
 
-private struct ProxyGroupPopoverNodeItem: View {
+struct ProxyGroupPopoverNodeItem: View {
     let title: String
     let typeText: String?
     let delayText: String
     let delaySamples: [Int]
     let latestSample: ProxyLatencySample?
     let language: AppLanguage
-    let delayColor: Color
     let isTesting: Bool
     let selected: Bool
     let testLatencyLabel: String
@@ -659,141 +584,51 @@ private struct ProxyGroupPopoverNodeItem: View {
     let action: () -> Void
 
     @State private var isHovered = false
-    @State private var isTestButtonHovered = false
-    @AppStorage("clashbar.proxy.group.show_latency_history") private var showLatencyHistory: Bool = false
-
-    private var delayValue: Int? {
-        self.delaySamples.last
-    }
+    @FocusState private var isFocused: Bool
+    @AppStorage("clashbar.proxy.group.show_latency_history") private var showLatencyHistory = false
 
     var body: some View {
-        HStack(spacing: T.space1) {
+        HStack(spacing: T.space6) {
             Button(action: self.action) {
-                HStack(spacing: T.space1) {
+                HStack(spacing: T.space6) {
                     Image(systemName: self.selected ? "checkmark.circle.fill" : "circle")
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .foregroundStyle(self
-                            .selected ? self.nativeAccent : self.nativeTertiaryLabel)
-                        .frame(width: 11, alignment: .center)
-
+                        .foregroundStyle(self.selected ? self.nativeAccent : self.nativeSecondaryLabel)
+                        .font(.app(size: T.FontSize.caption)).frame(width: 12).accessibilityHidden(true)
                     Text(self.title)
-                        .font(.app(size: T.FontSize.body, weight: self.selected ? .semibold : .medium))
-                        .foregroundStyle(self.selected ? self.nativePrimaryLabel : self.nativeSecondaryLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .minimumScaleFactor(T.minimumScale)
-
+                        .font(.app(size: T.FontSize.callout, weight: self.selected ? .semibold : .regular))
+                        .foregroundStyle(self.nativePrimaryLabel).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
-
-                    if let typeText = self.typeText {
-                        Text(typeText)
-                            .font(.app(size: T.FontSize.caption, weight: .medium))
-                            .foregroundStyle(self.selected ? self.nativePrimaryLabel.opacity(0.72) : self
-                                .nativeSecondaryLabel
-                                .opacity(0.82))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .padding(.horizontal, T.space4)
-                            .padding(.vertical, T.space1)
-                            .background(
-                                RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                                    .fill(Color(nsColor: .quaternaryLabelColor).opacity(self.selected ? 0.18 : 0.1)))
+                    if let typeText {
+                        SemanticTag(text: typeText, tint: self.nativeTeal)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .trailing, spacing: 1) {
-                self.latencyControl
-                LatencyAgeView(sample: self.latestSample, language: self.language)
-            }.frame(width: 72, alignment: .trailing)
-        }
-        .frame(height: 30)
-        .padding(.horizontal, T.space4)
-        .padding(.vertical, T.space1)
-        .background(
-            RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                .fill(self.rowBackground))
-        .onHover {
-            self.isHovered = $0
-            if !$0 {
-                self.isTestButtonHovered = false
-            }
-        }
-    }
-
-    @ViewBuilder
-    var latencyControl: some View {
-        if self.isHovered {
-            if self.isTesting {
-                LatencyLoadingIndicator()
-            } else {
-                Button {
-                    Task { await self.onTestLatency() }
-                } label: {
-                    Image(systemName: "gauge.with.dots.needle.50percent")
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(self.isTestButtonHovered ? self.testButtonTint : self.testButtonBaseTint)
-                        .frame(width: 18, height: 18, alignment: .center)
-                        .contentShape(Rectangle())
+            .buttonStyle(.plain).focused(self.$isFocused)
+            .accessibilityAddTraits(self.selected ? .isSelected : [])
+            self.delayBadge(samples: self.delaySamples, fallbackText: self.delayText, showsHistory: self.showLatencyHistory)
+                .overlay(alignment: .bottomTrailing) {
+                    LatencyAgeView(sample: self.latestSample, language: self.language)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .offset(y: 12).opacity(self.isHovered || self.isFocused || self.isTesting ? 1 : 0)
+                        .accessibilityHidden(!self.isHovered && !self.isFocused && !self.isTesting)
                 }
-                .buttonStyle(.borderless)
-                .help(self.testLatencyLabel)
-                .accessibilityLabel(self.testLatencyLabel)
-                .onHover { self.isTestButtonHovered = $0 }
-            }
-        } else {
-            self.delayMetricView
+            self.compactAsyncIconButton(symbol: "gauge", label: self.testLatencyLabel, tint: self.nativeTeal,
+                                        isLoading: self.isTesting, size: 20, fontSize: T.FontSize.caption,
+                                        isRevealed: self.isHovered || self.isFocused, action: self.onTestLatency)
         }
-    }
-
-    var rowBackground: Color {
-        if self.selected {
-            return self.nativeAccent.opacity(T.Opacity.tint)
-        }
-        if self.isHovered {
-            return self.nativeHoverFill.opacity(0.22)
-        }
-        return .clear
-    }
-
-    var testButtonTint: Color {
-        self.nativeTeal.opacity(T.Opacity.solid)
-    }
-
-    var testButtonBaseTint: Color {
-        self.nativeSecondaryLabel
-    }
-
-    @ViewBuilder
-    var delayMetricView: some View {
-        if self.delayValue != nil {
-            self.delayBadge(
-                samples: self.delaySamples,
-                fallbackText: self.delayText,
-                showsHistory: self.showLatencyHistory)
-        } else {
-            Text(self.delayText)
-                .font(.app(size: T.FontSize.caption, weight: .regular))
-                .foregroundStyle(self.delayColor)
-                .lineLimit(1)
-                .minimumScaleFactor(T.minimumScale)
-        }
+        .padding(.horizontal, T.space6).frame(height: 40)
+        .background((self.selected ? self.nativeAccent.opacity(0.10) : self.isHovered ? Color.primary.opacity(0.04) : .clear),
+                    in: RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
+        .onHover { self.isHovered = $0 }
     }
 }
 
 extension View {
     fileprivate func delayBadge(samples: [Int], fallbackText: String, showsHistory: Bool) -> some View {
-        let value = samples.last ?? 0
-        return HStack(alignment: .center, spacing: 5) {
-            LatencySignalBars(samples: samples, showsHistory: showsHistory)
-            Text(value == 0 ? fallbackText : "\(value)")
-                .font(.system(size: T.FontSize.caption, weight: .medium, design: .monospaced))
-                .foregroundStyle(self.nativePrimaryLabel)
-                .lineLimit(1)
+        HStack(spacing: T.space4) {
+            if showsHistory { LatencySignalBars(samples: samples, showsHistory: true) }
+            LatencyPillBadge(value: samples.last, text: fallbackText)
         }
     }
 }
@@ -830,13 +665,5 @@ private struct LatencySignalBars: View {
             return Color(nsColor: .quaternaryLabelColor).opacity(0.35)
         }
         return self.latencyColor(self.samples[sampleIndex])
-    }
-}
-
-private struct LatencyLoadingIndicator: View {
-    var body: some View {
-        ProgressView()
-            .controlSize(.mini)
-            .frame(width: 30, height: 14, alignment: .center)
     }
 }

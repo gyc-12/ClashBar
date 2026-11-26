@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 
-private typealias FS = MenuBarLayoutTokens.FontSize
-
 extension Font {
     static func app(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font(NSFont.systemFont(ofSize: size, weight: weight.nsFontWeight)).monospacedDigit()
+    }
+
+    static func appMono(size: CGFloat, weight: Font.Weight = .regular) -> Font {
         Font(NSFont.monospacedSystemFont(ofSize: size, weight: weight.nsFontWeight))
     }
 }

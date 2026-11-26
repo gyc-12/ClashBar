@@ -16,27 +16,15 @@ private struct SettingsSelectionRowConfiguration<Option: Hashable> {
 struct SystemTabView: TranslatingView {
     @EnvironmentObject var appViewModel: AppViewModel
     @State private var isExceptionsExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func settingsCardHeader(_ title: String, symbol: String) -> some View {
-        HStack(spacing: T.space6) {
-            Image(systemName: symbol)
-                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                .foregroundStyle(nativeTertiaryLabel)
-            Text(title)
-                .font(.app(size: T.FontSize.body, weight: .bold))
-                .foregroundStyle(nativeTertiaryLabel)
-                .textCase(.uppercase)
-            Spacer(minLength: 0)
-        }
-        .menuRowPadding(vertical: T.space2)
+        AppSectionHeader(title, symbol: symbol).padding(.horizontal, T.space4).padding(.bottom, T.space4)
     }
 
     func settingsRowLabel(symbol: String, title: String) -> some View {
         HStack(spacing: T.space6) {
-            Image(systemName: symbol)
-                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                .foregroundStyle(nativeTertiaryLabel)
-                .frame(width: 14, alignment: .center)
+            IconBadge(symbol: symbol, tint: self.nativeInfo, size: 20)
             Text(title)
                 .font(.app(size: T.FontSize.body, weight: .medium))
                 .foregroundStyle(nativePrimaryLabel)
@@ -61,7 +49,8 @@ struct SystemTabView: TranslatingView {
                 .controlSize(.small)
                 .disabled(isDisabled)
         }
-        .menuRowPadding(vertical: T.space4)
+        .menuRowPadding(vertical: T.space6)
+        .overlay(alignment: .bottom) { Divider().opacity(0.4).padding(.leading, 30) }
     }
 
     func settingsMenuRow(
@@ -97,7 +86,8 @@ struct SystemTabView: TranslatingView {
             .appBorderedButtonStyle()
             .controlSize(.small)
         }
-        .menuRowPadding(vertical: T.space4)
+        .menuRowPadding(vertical: T.space6)
+        .overlay(alignment: .bottom) { Divider().opacity(0.4).padding(.leading, 30) }
     }
 
     private func settingsSelectionRow(
@@ -129,7 +119,7 @@ struct SystemTabView: TranslatingView {
 
             TextField(self.tr("ui.placeholder.port"), text: text)
                 .textFieldStyle(.roundedBorder)
-                .font(.app(size: T.FontSize.body, weight: .regular))
+                .font(.appMono(size: T.FontSize.callout))
                 .foregroundStyle(nativePrimaryLabel)
                 .multilineTextAlignment(.trailing)
                 .frame(width: self.settingsPortFieldWidth, alignment: .trailing)
@@ -140,6 +130,7 @@ struct SystemTabView: TranslatingView {
                     Task { await self.appViewModel.applyProxyPorts(autoSaved: true) }
                 }
         }
+        .padding(.vertical, T.space4)
     }
 
     func systemProxyExceptionBinding(id: EditableSystemProxyException.ID) -> Binding<String> {
@@ -162,7 +153,7 @@ struct SystemTabView: TranslatingView {
                 text: self.systemProxyExceptionBinding(id: exception.id))
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
-                .font(.app(size: T.FontSize.body, weight: .regular))
+                .font(.appMono(size: T.FontSize.callout))
                 .foregroundStyle(nativePrimaryLabel)
 
             Button {
@@ -197,32 +188,7 @@ struct SystemTabView: TranslatingView {
     }
 
     func settingsFeedbackBanner(text: String, color: Color, symbol: String) -> some View {
-        HStack(spacing: T.space6) {
-            Image(systemName: symbol)
-                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                .foregroundStyle(color)
-
-            Text(text)
-                .font(.app(size: T.FontSize.caption, weight: .medium))
-                .foregroundStyle(nativePrimaryLabel)
-                .lineLimit(2)
-
-            Spacer(minLength: 0)
-        }
-        .menuRowPadding(vertical: T.space4)
-        .background {
-            RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                .fill(nativeControlFill)
-                .overlay {
-                    RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                        .stroke(color.opacity(0.26), lineWidth: T.stroke)
-                }
-                .shadow(
-                    color: self.nativeShadow.opacity(T.Shadow.standard.opacity),
-                    radius: T.Shadow.standard.radius,
-                    x: T.Shadow.standard.x,
-                    y: T.Shadow.standard.y)
-        }
+        SheetNote(text: text, tint: color, symbol: symbol).appSectionCard()
     }
 
     func statusBarModeLabel(_ mode: StatusBarDisplayMode) -> String {
@@ -248,12 +214,12 @@ struct SystemTabView: TranslatingView {
     }
 
     var settingsMenuControlWidth: CGFloat {
-        let contentWidth = T.panelWidth - (T.space8 * 2)
+        let contentWidth = T.contentWidth - T.cardPadding * 2
         return min(152, max(118, contentWidth * 0.43))
     }
 
     var settingsPortFieldWidth: CGFloat {
-        let contentWidth = T.panelWidth - (T.space8 * 2)
+        let contentWidth = T.contentWidth - T.cardPadding * 2
         return min(108, max(92, contentWidth * 0.30))
     }
 
@@ -369,7 +335,10 @@ struct SystemTabView: TranslatingView {
             ? "\(tr("ui.section.system_proxy_exceptions")) (\(tr("ui.machine.local_label")))"
             : self.tr("ui.section.system_proxy_exceptions")
 
-        return VStack(alignment: .leading, spacing: T.space6) {
+        return VStack(alignment: .leading, spacing: T.sectionSpacing) {
+            if let feedback = settingsFeedbackState {
+                self.settingsFeedbackBanner(text: feedback.message, color: feedback.color, symbol: feedback.symbol)
+            }
             VStack(spacing: 0) {
                 self.settingsCardHeader(
                     isRemote ? self.tr("ui.section.local_app_settings") : self.tr("ui.section.basic_settings"),
@@ -508,7 +477,8 @@ struct SystemTabView: TranslatingView {
                 .clipped()
                 .opacity(self.isExceptionsExpanded ? 1 : 0)
             }
-            .animation(.spring(response: 0.30, dampingFraction: 0.80), value: self.isExceptionsExpanded)
+            .appSectionCard()
+            .animation(self.reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.80), value: self.isExceptionsExpanded)
 
             VStack(spacing: 0) {
                 self.settingsCardHeader(
@@ -522,6 +492,7 @@ struct SystemTabView: TranslatingView {
                         isDisabled: self.appViewModel.isCoreSettingSyncing)
                 }
             }
+            .appSectionCard()
 
             VStack(spacing: 0) {
                 self.settingsCardHeader(
@@ -538,6 +509,7 @@ struct SystemTabView: TranslatingView {
                 }
                 .menuRowPadding(vertical: T.space4)
             }
+            .appSectionCard()
 
             VStack(spacing: 0) {
                 self.settingsCardHeader(
@@ -591,14 +563,7 @@ struct SystemTabView: TranslatingView {
                 }
                 .menuRowPadding(vertical: T.space4)
             }
-        }
-        .overlay(alignment: .top) {
-            if let feedback = settingsFeedbackState {
-                self.settingsFeedbackBanner(
-                    text: feedback.message,
-                    color: feedback.color,
-                    symbol: feedback.symbol)
-            }
+            .appSectionCard()
         }
     }
 }

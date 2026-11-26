@@ -55,6 +55,7 @@ extension MenuBarRootView {
         let mihomoSymbol = "cpu"
 
         return VStack(spacing: 0) {
+            Divider().opacity(0.5)
             HStack(spacing: T.space6) {
                 HStack(spacing: T.space6) {
                     self.footerInfo(
@@ -70,13 +71,8 @@ extension MenuBarRootView {
                 self.footerVersionInfo
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .menuRowPadding(vertical: T.space2)
-            .background(self.footerSurfaceBackground)
+            .padding(.vertical, T.space8)
         }
-    }
-
-    var footerSurfaceBackground: some View {
-        self.nativeControlSurface()
     }
 
     var footerMihomoVersionText: String {
@@ -352,7 +348,7 @@ extension View {
         cornerRadius: CGFloat = T.cornerRadius) -> some View
     {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(hovered ? self.nativeHoverFill : .clear)
+            .fill(hovered ? self.nativeHoverFill.opacity(0.10) : .clear)
     }
 
     func nativeBadgeCapsule() -> some View {
@@ -372,17 +368,17 @@ extension View {
                 if let count {
                     Text("\(count)")
                         .font(.app(size: T.FontSize.caption, weight: selected ? .bold : .medium))
-                        .foregroundStyle(selected ? Color.white.opacity(0.75) : self.nativeTertiaryLabel)
+                        .foregroundStyle(selected ? self.nativeInfo.opacity(0.8) : self.nativeSecondaryLabel)
                 }
             }
-            .foregroundStyle(selected ? Color.white : self.nativeSecondaryLabel)
+            .foregroundStyle(selected ? self.nativeInfo : self.nativeSecondaryLabel)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, T.space6)
-            .padding(.vertical, T.space2)
+            .padding(.vertical, T.space4)
             .background {
                 if selected {
-                    Capsule(style: .continuous).fill(self.nativeInfo.opacity(T.Opacity.solid))
+                    Capsule(style: .continuous).fill(self.nativeInfo.opacity(0.12))
                 } else {
                     self.nativeBadgeCapsule()
                 }
@@ -415,36 +411,35 @@ extension View {
     }
 
     func nativeControlSurface(cornerRadius: CGFloat = T.cornerRadius) -> some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(self.nativeControlFill.opacity(self.isDarkAppearance ? 0.54 : 0.38))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(
-                        self.nativeControlBorder.opacity(self.isDarkAppearance ? 0.40 : 0.12),
-                        lineWidth: T.stroke)
-            }
+        AppCardSurface(cornerRadius: cornerRadius)
     }
 
     func tabControlCard(@ViewBuilder _ content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: T.space4) {
+        VStack(alignment: .leading, spacing: T.space8) {
             content()
         }
-        .menuRowPadding(vertical: T.space4)
+        .appSectionCard(opaque: true)
     }
 
     func filterTextField(_ placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .textFieldStyle(.roundedBorder)
-            .font(.app(size: T.FontSize.body, weight: .regular))
-            .foregroundStyle(self.nativePrimaryLabel)
+        HStack(spacing: T.space6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.plain)
+                .foregroundStyle(self.nativePrimaryLabel)
+                .accessibilityLabel(placeholder)
+        }
+        .font(.app(size: T.FontSize.callout))
+        .padding(T.space8)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: T.cornerRadius))
     }
 
     func emptyCard(_ text: String) -> some View {
         Text(text)
             .font(.app(size: T.FontSize.body, weight: .regular))
             .foregroundStyle(self.nativeSecondaryLabel)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .menuRowPadding()
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .appSectionCard(padding: T.space12)
     }
 
     func fractionSummaryBadge(current: Int, total: Int) -> some View {
@@ -474,6 +469,7 @@ extension View {
         size: CGFloat = 20,
         fontSize: CGFloat = T.FontSize.body,
         hierarchicalSymbol: Bool = false,
+        isRevealed: Bool = true,
         action: @escaping () async -> Void) -> some View
     {
         CompactAsyncIconButton(
@@ -485,8 +481,10 @@ extension View {
             size: size,
             fontSize: fontSize,
             hierarchicalSymbol: hierarchicalSymbol,
+            isRevealed: isRevealed,
             action: action)
             .accessibilityLabel(label)
+            .help(label)
     }
 
     func compactTopIcon(
@@ -512,6 +510,8 @@ extension View {
             tint: tone.opacity(T.Opacity.solid),
             role: role,
             isLoading: isLoading,
+            size: T.compactRowHeight,
+            fontSize: T.FontSize.callout,
             action: action)
     }
 
@@ -558,14 +558,7 @@ extension View {
     }
 
     func latencyColor(_ value: Int?) -> Color {
-        guard let value else { return self.nativeTertiaryLabel }
-        if value == 0 {
-            return self.nativeCritical.opacity(T.Opacity.solid)
-        }
-        if value <= 400 {
-            return self.nativePositive.opacity(T.Opacity.solid)
-        }
-        return self.nativeWarning.opacity(T.Opacity.solid)
+        LatencyTier(value).color
     }
 
     func nextHovered<V: Equatable>(current: V?, target: V, isHovering: Bool) -> V? {
@@ -595,9 +588,12 @@ struct CompactAsyncIconButton: View {
     let size: CGFloat
     let fontSize: CGFloat
     let hierarchicalSymbol: Bool
+    var isRevealed = true
     let action: () async -> Void
 
     @State private var hovered = false
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(role: self.role) {
@@ -615,10 +611,15 @@ struct CompactAsyncIconButton: View {
                     .opacity(self.isLoading ? 1 : 0)
             }
             .frame(width: self.size, height: self.size)
-            .contentShape(Rectangle())
+            .background((self.hovered || self.focused) ? self.tint.opacity(0.10) : .clear,
+                        in: RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .disabled(self.isLoading)
+        .focused(self.$focused)
         .onHover { self.hovered = $0 }
+        .opacity(self.isRevealed || self.hovered || self.focused || self.isLoading ? 1 : 0)
+        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.12), value: self.isRevealed || self.hovered || self.focused)
     }
 }

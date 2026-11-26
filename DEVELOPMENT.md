@@ -95,3 +95,27 @@ swift test --filter 'NativeProxyProviderTests|ProxyProviderViewModelTests'
 CLASHBAR_TEST_MIHOMO=/absolute/path/to/mihomo swift test --filter ProxyProviderIntegrationTests
 CLASHBAR_TEST_RENDER_DIR=/tmp/clashbar-provider-preview swift test --filter ProxyProviderVisualTests
 ```
+
+## 原生面板 UI 验证
+
+`NativePanelPresentationTests` 覆盖流量曲线的边界与最近 60 个样本、延迟语义阈值、中英文本键和格式参数、短屏幕面板定位，以及节点菜单外部尺寸包含内边距的回归。
+
+`NativePanelVisualTests` 使用临时配置、独立 UserDefaults 和假核心，不启动核心。控制器固定为 `127.0.0.1:1`，状态栏设为纯图标，预览窗口不展示到屏幕；不会发现或控制用户正在使用的核心。预览包括五个页面、空状态、长策略组和节点名称、360pt 短面板、滚动后的置顶筛选区、端口与维护设置，以及六类编辑 / 诊断弹窗和提供商的各项操作。每个场景都导出中文、英文及浅色、深色 PNG。
+
+```sh
+swift test --filter NativePanelPresentationTests
+CLASHBAR_TEST_RENDER_DIR="$PWD/.build/ui-preview" swift test --filter NativePanelVisualTests
+```
+
+可一起导出已有编辑器和业务视图的预览，核对原生来源、订阅覆盖提示及固定底部操作。目录保留在 `.build/`，不提交生成图片：
+
+```sh
+CLASHBAR_TEST_RENDER_DIR="$PWD/.build/ui-preview" swift test --filter 'renderNativePanelForVisualReview|renderEditorForVisualReview|renderNativeRulesForVisualReview|renderApplicationRoutingForVisualReview|renderDiagnosticsForVisualReview|ProxyProviderVisualTests'
+swift build
+swift test
+make spec-check
+make graph
+npx --yes @colbymchenry/codegraph@1.6.2 impact TrafficSparklineGeometry --depth 1
+```
+
+视觉验收时检查导航标签、长名称截断方式、延迟与状态颜色、短面板滚动及弹窗底部按钮；用打包 App 补充悬停、键盘、VoiceOver 和减少透明度的系统交互检查。SDK 的减少透明度环境值只读，组件预览通过同一实色背景分支核对外观，不修改系统设置。隐藏预览窗口中的原生开关和默认按钮可能显示为非活动灰色，实际开关状态由位置及文字共同确认。

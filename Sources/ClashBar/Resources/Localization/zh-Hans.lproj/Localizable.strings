@@ -79,7 +79,7 @@
 "ui.quick.switch_config" = "切换配置";
 "ui.quick.system_proxy" = "系统代理";
 "ui.quick.tun_mode" = "TUN 模式";
-"ui.quick.tun_stack_switch_hint" = "双击切换 TUN 协议栈";
+"ui.quick.tun_stack_switch_hint" = "选择协议栈并启用 TUN";
 "ui.quick.copy_terminal" = "复制终端命令";
 "ui.quick.copy_terminal_current_endpoint" = "复制当前端点命令";
 "ui.quick.reload_config_list" = "重载配置文件";
@@ -594,3 +594,19 @@
 "ui.proxy_provider.error.source" = "独立核心未能加载订阅。请检查订阅链接、代理组依赖和网络访问。";
 "ui.proxy_provider.error.reload" = "运行中的核心未能加载预期的提供商或代理组。";
 "ui.proxy_provider.error.empty_groups" = "以下代理组将没有可用成员：%@。请选择回退节点后继续。";
+
+// Native panel presentation
+"ui.navigation.mode" = "代理模式";
+"ui.navigation.pages" = "功能页面";
+"ui.action.open_webui" = "打开 WebUI";
+"ui.controller.lan_warning" = "控制器绑定到 0.0.0.0，局域网设备可以访问。";
+"ui.traffic.download" = "下载";
+"ui.traffic.upload" = "上传";
+"ui.traffic.total" = "累计 %@";
+"ui.traffic.connections" = "%d 个连接";
+"ui.traffic.memory" = "内存使用";
+"ui.quick.on" = "已开启";
+"ui.quick.off" = "已关闭";
+"ui.quick.applying" = "正在应用";
+"ui.quick.terminal" = "终端代理";
+"ui.quick.tun_stack" = "TUN 协议栈";

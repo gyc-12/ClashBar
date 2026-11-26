@@ -41,22 +41,20 @@ struct ApplicationRuleEditorView: TranslatingView {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label(self.tr("ui.app_rule.title"), systemImage: "app.badge").font(.headline)
-            Text(self.context.document.configURL.lastPathComponent).font(.caption).foregroundStyle(.secondary)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    self.applicationPicker
-                    self.ruleFields
-                    self.notes
-                }.disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
+        ModalSheetContainer(title: self.tr("ui.app_rule.title"), subtitle: self.context.document.configURL.lastPathComponent,
+                            symbol: "app.badge", width: MenuBarLayoutTokens.Sheet.wideWidth,
+                            height: MenuBarLayoutTokens.Sheet.tallHeight) {
+            VStack(alignment: .leading, spacing: 12) {
+                self.applicationPicker.appSectionCard(padding: 12)
+                    .disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
+                self.ruleFields.appSectionCard(padding: 12)
+                    .disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
+                self.notes
+                if let error { SheetNote(text: error, tint: self.nativeCritical, symbol: "exclamationmark.triangle") }
             }
-            if let error {
-                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        } footer: {
             self.footer
-        }.padding(20).frame(width: 460, height: 690)
+        }
         .interactiveDismissDisabled(self.appViewModel.isQuickRuleSaving)
         .task {
             guard self.loadCatalog else { return }
@@ -94,7 +92,7 @@ struct ApplicationRuleEditorView: TranslatingView {
                     .help(self.tr("ui.app_rule.choose_application"))
                     .accessibilityLabel(self.tr("ui.app_rule.choose_application"))
             }
-            TextField(self.tr("ui.app_rule.search"), text: self.$search).textFieldStyle(.roundedBorder)
+            self.filterTextField(self.tr("ui.app_rule.search"), text: self.$search)
             let candidates = (self.source == 0 ? self.applications : self.context.observed).filter { $0.matches(self.search) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
@@ -105,8 +103,8 @@ struct ApplicationRuleEditorView: TranslatingView {
                                     Image(nsImage: NSWorkspace.shared.icon(forFile: path)).resizable().frame(width: 24, height: 24)
                                 } else { Image(systemName: "terminal").frame(width: 24) }
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(candidate.name).font(.system(size: 12)).lineLimit(1)
-                                    Text(candidate.processPath ?? candidate.processName).font(.system(size: 10))
+                                    Text(candidate.name).font(.app(size: MenuBarLayoutTokens.FontSize.callout, weight: .medium)).lineLimit(1)
+                                    Text(candidate.processPath ?? candidate.processName).font(.appMono(size: MenuBarLayoutTokens.FontSize.caption))
                                         .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                                 }
                                 Spacer(minLength: 0)
@@ -135,7 +133,7 @@ struct ApplicationRuleEditorView: TranslatingView {
             }
             TextField(self.tr(self.type == .processPath ? "ui.app_rule.path_placeholder" : "ui.app_rule.name_placeholder"),
                 text: Binding(get: { self.target }, set: { self.target = $0; self.selected = nil }))
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.roundedBorder).font(.appMono(size: MenuBarLayoutTokens.FontSize.callout))
             self.note(self.tr(self.type == .processPath ? "ui.app_rule.path_hint" : "ui.app_rule.name_hint"))
             self.field(self.tr("ui.quick_rule.policy")) {
                 Button { self.choosingPolicy = true } label: {
@@ -149,14 +147,12 @@ struct ApplicationRuleEditorView: TranslatingView {
             }
             self.field(self.tr("ui.quick_rule.preview")) {
                 Text(self.rule?.line ?? self.tr("ui.app_rule.error.process"))
-                    .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                    .appCodeBlock()
             }
             Toggle(self.tr("ui.app_rule.enable_lookup"), isOn: self.$enableProcessLookup)
             self.note(self.tr("ui.app_rule.lookup_state", self.context.fileProcessMode, self.context.processMode))
             if self.needsProcessLookup && !self.enableProcessLookup {
-                Text(self.tr("ui.app_rule.error.disabled")).font(.caption).foregroundStyle(.orange)
+                SheetNote(text: self.tr("ui.app_rule.error.disabled"), tint: self.nativeWarning, symbol: "exclamationmark.triangle")
             }
         }
     }
@@ -170,28 +166,29 @@ struct ApplicationRuleEditorView: TranslatingView {
     }
 
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if self.context.isSubscription && self.result == nil {
-                Label(self.tr("ui.quick_rule.subscription_hint"), systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                SheetNote(text: self.tr("ui.quick_rule.subscription_hint"), tint: self.nativeWarning, symbol: "exclamationmark.triangle")
             }
             if let result {
-                Label(self.tr(result.applied ? "ui.native_rule.saved" : "ui.native_rule.saved_file"), systemImage: "checkmark.circle")
-                    .font(.caption).foregroundStyle(.green)
+                SheetNote(text: self.tr(result.applied ? "ui.native_rule.saved" : "ui.native_rule.saved_file"),
+                          tint: self.nativePositive, symbol: "checkmark.circle.fill")
                 if let backup = result.backupURL {
-                    Button(self.tr("ui.quick_rule.show_backup")) { NSWorkspace.shared.activateFileViewerSelecting([backup]) }.font(.caption)
+                    Button(self.tr("ui.quick_rule.show_backup")) { NSWorkspace.shared.activateFileViewerSelecting([backup]) }
+                        .font(.app(size: MenuBarLayoutTokens.FontSize.subheadline))
                 }
             }
-            HStack {
+            HStack(spacing: 8) {
+                if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
                 Spacer()
                 if self.result != nil {
                     Button(self.tr("ui.action.close")) { self.dismiss() }.keyboardShortcut(.defaultAction)
+                        .appBorderedButtonStyle(prominent: true)
                 } else {
                     Button(self.tr("ui.action.cancel")) { self.dismiss() }.keyboardShortcut(.cancelAction)
-                        .disabled(self.appViewModel.isQuickRuleSaving)
+                        .appBorderedButtonStyle().disabled(self.appViewModel.isQuickRuleSaving)
                     Button(self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.quick_rule.save" : "ui.native_rule.save_file")) { self.save() }
-                        .keyboardShortcut(.defaultAction).disabled(!self.canSave)
-                    if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
+                        .keyboardShortcut(.defaultAction).appBorderedButtonStyle(prominent: true).disabled(!self.canSave)
                 }
             }
         }
@@ -203,12 +200,10 @@ struct ApplicationRuleEditorView: TranslatingView {
         self.target = candidate.target(for: candidate.preferredType)
         self.error = nil
     }
-    private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) { Text(title).font(.caption).foregroundStyle(.secondary); content() }
+    private func field<Content: View>(_ title: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        SheetField(title: title, content: content)
     }
-    private func note(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-    }
+    private func note(_ text: String) -> some View { SheetNote(text: text) }
     private func save() {
         guard let rule else { return }
         self.error = nil

@@ -26,62 +26,44 @@ struct NativeRuleEditorView: TranslatingView {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label(self.tr("ui.native_rule.edit"), systemImage: "pencil").font(.headline)
-            Text("\(self.context.document.configURL.lastPathComponent) · #\(self.context.entry.index + 1)")
-                .font(.caption).foregroundStyle(.secondary)
-            ScrollView {
+        ModalSheetContainer(title: self.tr("ui.native_rule.edit"),
+                            subtitle: "\(self.context.document.configURL.lastPathComponent) · #\(self.context.entry.index + 1)",
+                            symbol: "pencil", height: MenuBarLayoutTokens.Sheet.tallHeight) {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle(self.tr("ui.native_rule.raw_mode"), isOn: self.$rawMode)
                     if self.rawMode || self.syntax == nil {
                         self.field(self.tr("ui.native_rule.raw")) {
-                            TextEditor(text: self.$raw).font(.system(.body, design: .monospaced))
-                                .frame(height: 90).border(.quaternary)
+                            TextEditor(text: self.$raw).scrollContentBackground(.hidden)
+                                .frame(height: 96).appCodeBlock()
                         }
                         self.note(self.tr("ui.native_rule.raw_hint"))
                     } else if let syntax {
                         self.field(self.tr("ui.quick_rule.type")) {
-                            Picker(
-                                self.tr("ui.quick_rule.type"),
-                                selection: Binding(get: { syntax.type }, set: { self.update(type: $0) })
-                            ) {
+                            Picker(self.tr("ui.quick_rule.type"),
+                                   selection: Binding(get: { syntax.type }, set: { self.update(type: $0) })) {
                                 ForEach(NativeRuleSyntax.types, id: \.self) { Text($0).tag($0) }
                             }.labelsHidden()
                         }
                         if syntax.type != "MATCH" {
-                            self.field(
-                                self.tr(
-                                    syntax.type == "RULE-SET" ? "ui.native_rule.provider" : "ui.native_rule.condition")
-                            ) {
+                            self.field(self.tr(syntax.type == "RULE-SET" ? "ui.native_rule.provider" : "ui.native_rule.condition")) {
                                 if syntax.type == "RULE-SET" {
-                                    Picker(
-                                        self.tr("ui.native_rule.provider"),
-                                        selection: Binding(get: { syntax.payload }, set: { self.update(payload: $0) })
-                                    ) {
-                                        ForEach(
-                                            Array(Set(self.context.document.providerNames + [syntax.payload])).sorted(),
-                                            id: \.self
-                                        ) { Text($0).tag($0) }
+                                    Picker(self.tr("ui.native_rule.provider"),
+                                           selection: Binding(get: { syntax.payload }, set: { self.update(payload: $0) })) {
+                                        ForEach(Array(Set(self.context.document.providerNames + [syntax.payload])).sorted(), id: \.self) { Text($0).tag($0) }
                                     }.labelsHidden()
                                 } else {
-                                    TextField(
-                                        self.tr("ui.native_rule.condition"),
-                                        text: Binding(get: { syntax.payload }, set: { self.update(payload: $0) })
-                                    )
-                                    .textFieldStyle(.roundedBorder)
+                                    TextField(self.tr("ui.native_rule.condition"),
+                                              text: Binding(get: { syntax.payload }, set: { self.update(payload: $0) }))
+                                        .textFieldStyle(.roundedBorder).font(.appMono(size: MenuBarLayoutTokens.FontSize.callout))
                                 }
                             }
                         }
                         self.field(self.tr(syntax.targetsSubRule ? "ui.native_rule.subrule" : "ui.quick_rule.policy")) {
-                            Button {
-                                self.choosingPolicy = true
-                            } label: {
-                                HStack {
-                                    Text(syntax.target)
-                                    Spacer()
-                                    Image(systemName: "chevron.up.chevron.down")
-                                }
+                            Button { self.choosingPolicy = true } label: {
+                                HStack { Text(syntax.target); Spacer(); Image(systemName: "chevron.up.chevron.down") }
                             }
+                            .appBorderedButtonStyle()
                             .popover(isPresented: self.$choosingPolicy) {
                                 RuleTargetPickerView(targets: self.targets, selected: syntax.target) { target in
                                     self.raw = (try? syntax.replacingTarget(target)) ?? self.raw
@@ -89,65 +71,53 @@ struct NativeRuleEditorView: TranslatingView {
                                 }.environmentObject(self.appViewModel)
                             }
                         }
-                        if syntax.supportsNoResolve {
-                            Toggle("no-resolve", isOn: self.optionBinding("no-resolve"))
-                        }
+                        if syntax.supportsNoResolve { Toggle("no-resolve", isOn: self.optionBinding("no-resolve")) }
                         if syntax.supportsSource { Toggle("src", isOn: self.optionBinding("src")) }
                         if syntax.type == "RULE-SET" { self.note(self.tr("ui.native_rule.ruleset_hint")) }
                         if syntax.targetsSubRule { self.note(self.tr("ui.native_rule.subrule_hint")) }
                     }
+                }
+                .appSectionCard(padding: 12)
+                .disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
+                VStack(alignment: .leading, spacing: 10) {
                     Toggle(self.tr("ui.native_rule.custom"), isOn: self.$isCustom)
+                        .disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
                     self.note(self.tr("ui.native_rule.custom_hint"))
-                    self.field(self.tr("ui.quick_rule.preview")) {
-                        Text(self.raw).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                    }
-                    self.note(
-                        self.tr(
-                            self.appViewModel.nativeRulesMatchRuntime
-                                ? "ui.native_rule.apply_hint" : "ui.native_rule.file_hint"))
+                    self.field(self.tr("ui.quick_rule.preview")) { Text(self.raw).appCodeBlock() }
+                    self.note(self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.native_rule.apply_hint" : "ui.native_rule.file_hint"))
                     if self.context.isSubscription {
-                        Label(self.tr("ui.quick_rule.subscription_hint"), systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                        SheetNote(text: self.tr("ui.quick_rule.subscription_hint"), tint: self.nativeWarning, symbol: "exclamationmark.triangle")
                     }
                     if self.appViewModel.currentMode != .rule { self.note(self.tr("ui.quick_rule.mode_hint")) }
-                }.disabled(self.appViewModel.isQuickRuleSaving || self.result != nil)
-            }
-            if let error {
-                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled).fixedSize(
-                    horizontal: false, vertical: true)
-            }
-            if let result {
-                Label(
-                    self.tr(result.applied ? "ui.native_rule.saved" : "ui.native_rule.saved_file"),
-                    systemImage: "checkmark.circle"
-                )
-                .font(.caption).foregroundStyle(.green).fixedSize(horizontal: false, vertical: true)
-                if let backup = result.backupURL {
-                    Button(self.tr("ui.quick_rule.show_backup")) {
-                        NSWorkspace.shared.activateFileViewerSelecting([backup])
-                    }.font(.caption)
+                }
+                .appSectionCard(padding: 12)
+                if let error { SheetNote(text: error, tint: self.nativeCritical, symbol: "exclamationmark.triangle") }
+                if let result {
+                    SheetNote(text: self.tr(result.applied ? "ui.native_rule.saved" : "ui.native_rule.saved_file"),
+                              tint: self.nativePositive, symbol: "checkmark.circle.fill")
+                    if let backup = result.backupURL {
+                        Button(self.tr("ui.quick_rule.show_backup")) { NSWorkspace.shared.activateFileViewerSelecting([backup]) }
+                            .font(.app(size: MenuBarLayoutTokens.FontSize.subheadline))
+                    }
                 }
             }
-            HStack {
+        } footer: {
+            HStack(spacing: 8) {
+                if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
                 Spacer()
                 if self.result != nil {
                     Button(self.tr("ui.action.close")) { self.dismiss() }.keyboardShortcut(.defaultAction)
+                        .appBorderedButtonStyle(prominent: true)
                 } else {
-                    Button(self.tr("ui.action.cancel")) { self.dismiss() }.keyboardShortcut(.cancelAction).disabled(
-                        self.appViewModel.isQuickRuleSaving)
-                    Button(
-                        self.tr(
-                            self.appViewModel.nativeRulesMatchRuntime
-                                ? "ui.quick_rule.save" : "ui.native_rule.save_file")
-                    ) { self.save() }.keyboardShortcut(.defaultAction)
+                    Button(self.tr("ui.action.cancel")) { self.dismiss() }.keyboardShortcut(.cancelAction)
+                        .appBorderedButtonStyle().disabled(self.appViewModel.isQuickRuleSaving)
+                    Button(self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.quick_rule.save" : "ui.native_rule.save_file")) { self.save() }
+                        .keyboardShortcut(.defaultAction).appBorderedButtonStyle(prominent: true)
                         .disabled(self.raw.trimmed.isEmpty || !self.appViewModel.canEditQuickRules)
-                    if self.appViewModel.isQuickRuleSaving { ProgressView().controlSize(.small) }
                 }
             }
-        }.padding(20).frame(width: 440, height: 660)
-            .interactiveDismissDisabled(self.appViewModel.isQuickRuleSaving)
+        }
+        .interactiveDismissDisabled(self.appViewModel.isQuickRuleSaving)
     }
 
     private func update(type: String? = nil, payload: String? = nil, options: [String]? = nil) {
@@ -177,15 +147,10 @@ struct NativeRuleEditorView: TranslatingView {
                 self.update(options: options)
             })
     }
-    private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            content()
-        }
+    private func field<Content: View>(_ label: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        SheetField(title: label, content: content)
     }
-    private func note(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-    }
+    private func note(_ text: String) -> some View { SheetNote(text: text) }
     private func save() {
         self.error = nil
         Task {
@@ -206,7 +171,7 @@ struct RuleTargetPickerView: TranslatingView {
     @State private var search = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField(self.tr("ui.native_rule.search_policy"), text: self.$search).textFieldStyle(.roundedBorder)
+            self.filterTextField(self.tr("ui.native_rule.search_policy"), text: self.$search)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(
@@ -225,7 +190,7 @@ struct RuleTargetPickerView: TranslatingView {
                     }
                 }
             }.frame(height: 220)
-        }.padding(12).frame(width: 260)
+        }.font(.app(size: MenuBarLayoutTokens.FontSize.callout)).padding(12).frame(width: 260)
     }
 }
 
@@ -248,7 +213,7 @@ struct NativeRulePolicyButton: TranslatingView {
                 } else {
                     Image(systemName: "chevron.down").font(.system(size: 8))
                 }
-            }.font(.system(size: 11)).contentShape(Rectangle())
+            }.font(.app(size: MenuBarLayoutTokens.FontSize.subheadline)).contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(!self.appViewModel.canEditQuickRules)
             .help(self.tr("ui.native_rule.change_policy"))
             .popover(isPresented: self.$showing) {

@@ -22,19 +22,20 @@ struct LogsTabView: TranslatingView {
     var body: some View {
         let logs = self.viewModel.visibleLogs
 
-        return VStack(alignment: .leading, spacing: T.space6) {
-            self.logsControlCard(filteredCount: logs.count)
-
-            if logs.isEmpty {
-                emptyCard(self.tr("ui.empty.logs"))
-            } else {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    SeparatedForEach(data: logs, id: \.id, separator: nativeSeparator) { log in
-                        self.logEntryRow(log)
-                            .padding(.horizontal, T.space4)
-                            .padding(.vertical, T.space4)
+        return LazyVStack(alignment: .leading, spacing: T.space8, pinnedViews: [.sectionHeaders]) {
+            Section {
+                if logs.isEmpty {
+                    emptyCard(self.tr("ui.empty.logs"))
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        SeparatedForEach(data: logs, id: \.id, separator: nativeSeparator.opacity(0.4)) { log in
+                            self.logEntryRow(log).padding(.horizontal, T.space6).padding(.vertical, T.space8)
+                        }
                     }
+                    .appSectionCard(padding: T.space4)
                 }
+            } header: {
+                self.logsControlCard(filteredCount: logs.count)
             }
         }
         .onAppear { self.refreshData() }
@@ -102,7 +103,7 @@ struct LogsTabView: TranslatingView {
         self.logFilterGroup(.init(
             symbol: "line.3.horizontal.decrease.circle",
             allTitle: self.tr("ui.log_source.all"),
-            allSelected: false,
+            allSelected: self.viewModel.selectedSources.isEmpty,
             selectAll: { self.viewModel.selectedSources = [] },
             items: AppLogSource.allCases,
             itemTitle: { self.logSourcePresentation($0).label },
@@ -151,7 +152,7 @@ struct LogsTabView: TranslatingView {
         self.logFilterGroup(.init(
             symbol: "slider.horizontal.3",
             allTitle: self.tr("ui.log_filter.all"),
-            allSelected: false,
+            allSelected: self.viewModel.selectedLevels.isEmpty,
             selectAll: { self.viewModel.selectedLevels = [] },
             items: LogLevelFilter.allCases,
             itemTitle: { self.tr($0.titleKey) },
@@ -196,33 +197,25 @@ struct LogsTabView: TranslatingView {
                 .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
 
             VStack(alignment: .leading, spacing: T.space2) {
-                HStack(spacing: T.space2) {
-                    Text(sourceInfo.label)
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .foregroundStyle(sourceInfo.color)
-
+                HStack(spacing: T.space4) {
+                    SemanticTag(text: sourceInfo.label, tint: sourceInfo.color, monospaced: false)
+                    SemanticTag(text: levelInfo.label, tint: tone, monospaced: false)
                     if let protocolTag = parsed.protocolTag {
-                        self.logMetadataSeparator
-                        Text(protocolTag)
-                            .font(.app(size: T.FontSize.caption, weight: .semibold))
-                            .foregroundStyle(parsed.protocolColor)
+                        SemanticTag(text: protocolTag.trimmingCharacters(in: CharacterSet(charactersIn: "[]")), tint: parsed.protocolColor)
                     }
-
-                    self.logMetadataSeparator
+                    Spacer(minLength: 0)
                     Text(ValueFormatter.dateTime(log.timestamp))
-                        .font(.app(size: T.FontSize.caption, weight: .regular))
-                        .foregroundStyle(nativeTertiaryLabel)
-                        .lineLimit(1)
+                        .font(.appMono(size: T.FontSize.micro)).foregroundStyle(.secondary).lineLimit(1)
                 }
 
                 Text(parsed.mainText)
-                    .font(.app(size: T.FontSize.caption, weight: .regular))
+                    .font(.appMono(size: T.FontSize.subheadline))
                     .foregroundStyle(nativePrimaryLabel)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let detailText = parsed.detailText {
                     Text(detailText)
-                        .font(.app(size: T.FontSize.caption, weight: .regular))
+                        .font(.appMono(size: T.FontSize.caption))
                         .foregroundStyle(nativeSecondaryLabel)
                         .lineLimit(2)
                         .padding(.leading, T.space6)
@@ -251,12 +244,6 @@ struct LogsTabView: TranslatingView {
                 Label(self.tr("ui.action.copy_log_entry"), systemImage: "doc.plaintext")
             }
         }
-    }
-
-    var logMetadataSeparator: some View {
-        Text("•")
-            .font(.app(size: T.FontSize.caption, weight: .regular))
-            .foregroundStyle(nativeTertiaryLabel)
     }
 
     func normalizedLogLevel(_ raw: String) -> String {

@@ -11,7 +11,7 @@ struct MenuBarHeaderView: TranslatingView {
     @Environment(\.openURL) private var openURL
 
     var headerLogoSize: CGFloat {
-        40
+        32
     }
 
     var body: some View {
@@ -20,21 +20,12 @@ struct MenuBarHeaderView: TranslatingView {
 
     var topHeader: some View {
         HStack(alignment: .center, spacing: T.space8) {
-            HStack(alignment: .top, spacing: T.space8) {
+            HStack(alignment: .center, spacing: T.space8) {
                 Button {
                     guard let url = URL(string: "https://github.com/Sitoi/ClashBar") else { return }
                     self.openURL(url)
                 } label: {
                     ZStack {
-                        RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                            .fill(nativeControlFill.opacity(T.Opacity.solid))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous)
-                                    .stroke(
-                                        nativeControlBorder.opacity(T.Opacity.solid),
-                                        lineWidth: T.stroke)
-                            }
-
                         if let brandImage = BrandIcon.image {
                             Image(nsImage: brandImage)
                                 .resizable()
@@ -52,15 +43,21 @@ struct MenuBarHeaderView: TranslatingView {
                         }
                     }
                     .frame(width: self.headerLogoSize, height: self.headerLogoSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .help(self.tr("ui.action.open_project_homepage"))
                 .accessibilityLabel(self.tr("ui.action.open_project_homepage"))
 
                 VStack(alignment: .leading, spacing: T.space2) {
-                    Text("ClashBar")
-                        .font(.app(size: T.FontSize.title3, weight: .semibold))
-                        .foregroundStyle(nativePrimaryLabel)
+                    HStack(spacing: T.space6) {
+                        Text("ClashBar")
+                            .font(.app(size: T.FontSize.title3, weight: .semibold))
+                            .foregroundStyle(nativePrimaryLabel)
+                        if self.appViewModel.isTunEnabled {
+                            SemanticTag(text: "TUN", tint: self.nativeTeal)
+                        }
+                    }
 
                     HStack(spacing: T.space6) {
                         self.headerConnectionControl
@@ -84,7 +81,7 @@ struct MenuBarHeaderView: TranslatingView {
 
             Spacer(minLength: T.space6)
 
-            HStack(spacing: T.space6) {
+            HStack(spacing: T.space2) {
                 self.compactTopIcon(
                     self.appViewModel.isPinned ? "pin.fill" : "pin",
                     label: self.appViewModel.isPinned ? self.tr("ui.action.unpin") : self.tr("ui.action.pin"),
@@ -123,8 +120,10 @@ struct MenuBarHeaderView: TranslatingView {
                     await self.appViewModel.quitApp()
                 }
             }
+            .padding(3)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .padding(.vertical, T.space8)
+        .padding(.vertical, T.space12)
         .sheet(isPresented: self.$showRemoteMachineManager) {
             RemoteMachineManagerView(
                 store: self.remoteMachineStore,
@@ -154,12 +153,14 @@ struct MenuBarHeaderView: TranslatingView {
                     } else {
                         Circle()
                             .fill(self.headerConnectionStatusTint)
-                            .frame(width: 8, height: 8)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: self.headerConnectionStatusTint.opacity(0.25), radius: 3)
+                            .accessibilityHidden(true)
                     }
 
                     Text(self.headerConnectionDisplayText)
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .foregroundStyle(nativePrimaryLabel)
+                        .font(.appMono(size: T.FontSize.caption))
+                        .foregroundStyle(nativeSecondaryLabel)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
@@ -230,8 +231,8 @@ struct MenuBarHeaderView: TranslatingView {
         Image(systemName: "exclamationmark.triangle.fill")
             .font(.app(size: T.FontSize.caption, weight: .semibold))
             .foregroundStyle(nativeWarning)
-            .help("external-controller is 0.0.0.0 and can be accessed from your LAN.")
-            .accessibilityLabel("Warning: external-controller is bound to 0.0.0.0")
+            .help(self.tr("ui.controller.lan_warning"))
+            .accessibilityLabel(self.tr("ui.controller.lan_warning"))
     }
 
     var headerControllerWebUIButton: some View {
@@ -243,8 +244,8 @@ struct MenuBarHeaderView: TranslatingView {
                 .foregroundStyle(self.nativeSecondaryLabel)
         }
         .buttonStyle(.plain)
-        .help("Open WebUI")
-        .accessibilityLabel("Open WebUI")
+        .help(self.tr("ui.action.open_webui"))
+        .accessibilityLabel(self.tr("ui.action.open_webui"))
         .disabled(self.isSwitchingMachine)
         .opacity(self.isSwitchingMachine ? 0.6 : 1)
     }

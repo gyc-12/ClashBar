@@ -29,90 +29,21 @@ struct RulesTabView: TranslatingView {
         let visibleRules = output.rules
         let providerLookup = output.providerLookup
 
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                HStack(spacing: T.space8) {
-                    self.rulesStatChip(title: self.tr("ui.rule.stats.rules"), value: "\(self.sourceItems.count)")
-                    self.rulesStatChip(
-                        title: self.tr("ui.rule.stats.sets"),
-                        value: "\(self.appViewModel.isRemoteTarget || self.runtimeNavigation ? self.proxyStore.providerRuleCount : self.appViewModel.nativeRuleDocument?.providerNames.count ?? 0)")
-                }
-
-                Spacer(minLength: 0)
-                HStack(spacing: T.space4) {
-                    self.compactTopIcon("app.badge", label: self.tr("ui.app_rule.title")) {
-                        Task { await self.appViewModel.openApplicationRuleEditor() }
-                    }.help(self.tr(self.appViewModel.isRemoteTarget ? "ui.quick_rule.local_only" : "ui.app_rule.title"))
-                        .disabled(!self.appViewModel.canEditApplicationRules)
-                    self.compactTopIcon("plus", label: self.tr("ui.quick_rule.add")) {
-                        self.appViewModel.openQuickRuleEditor()
+        return LazyVStack(alignment: .leading, spacing: T.space8, pinnedViews: [.sectionHeaders]) {
+            self.rulesSummary
+            Section {
+                Group {
+                    if visibleRules.isEmpty {
+                        self.rulesEmptyState
+                    } else if self.viewModel.groupByPolicy {
+                        self.groupedRulesList(groups: output.groups, providerLookup: providerLookup)
+                    } else {
+                        self.flatRulesList(visibleRules: visibleRules, providerLookup: providerLookup)
                     }
-                    .help(self.tr(self.appViewModel.isRemoteTarget ? "ui.quick_rule.local_only" : "ui.quick_rule.add"))
-                    .disabled(!self.appViewModel.canEditQuickRules)
-                    self.rulesGroupToggle
-                    self.compactTopIcon("arrow.down", label: self.tr("ui.diagnostics.sort_hits"), toneOverride: self.viewModel.sortByHits ? nativeInfo : nil) {
-                        self.viewModel.sortByHits.toggle()
-                    }.help(self.tr("ui.diagnostics.sort_hits"))
-                    self.rulesRefreshButton
                 }
-            }
-            .padding(.vertical, T.space6)
-            .overlay(alignment: .bottom) { self.hairline }
-
-            if self.runtimeNavigation {
-                Text(self.tr("ui.diagnostics.runtime_only_rules")).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true).padding(.vertical, 5)
-            } else if !self.appViewModel.isRemoteTarget {
-                HStack(spacing: 5) {
-                    Text(self.appViewModel.selectedConfigName).lineLimit(1).truncationMode(.middle)
-                    Spacer()
-                    Text(self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.native_rule.active" : "ui.native_rule.file_only"))
-                }.font(.system(size: 10)).foregroundStyle(.secondary).padding(.vertical, 5)
-                if let message = self.appViewModel.nativeRuleDocumentError ?? self.appViewModel.nativeRuleSaveNotice {
-                    Text(message).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.vertical, 4)
-                }
-            }
-
-            self.rulesControlCard
-                .overlay(alignment: .bottom) { self.hairline }
-
-            if !self.appViewModel.ruleNavigationIDs.isEmpty {
-                HStack {
-                    Text(self.tr("ui.diagnostics.navigation_candidates", visibleRules.count)).font(.caption)
-                    Spacer()
-                    Button(self.tr("ui.diagnostics.clear_navigation")) { self.appViewModel.ruleNavigationIDs = [] }
-                        .font(.caption)
-                }.padding(.vertical, 6)
-            }
-
-            HStack(spacing: 0) {
-                Color.clear.frame(width: 24)
-                Text(self.tr("ui.rules.column.target_type"))
-                    .font(.app(size: T.FontSize.caption, weight: .medium))
-                    .foregroundStyle(nativeTertiaryLabel)
-                    .frame(width: 120, alignment: .leading)
-                    .padding(.trailing, T.space6)
-                Text(self.tr("ui.rules.column.policy"))
-                    .font(.app(size: T.FontSize.caption, weight: .medium))
-                    .foregroundStyle(nativeTertiaryLabel)
-                    .padding(.leading, T.space6)
-                    .frame(width: 90, alignment: .leading)
-                Text(self.tr("ui.diagnostics.hits_column"))
-                    .font(.app(size: T.FontSize.caption, weight: .medium))
-                    .foregroundStyle(nativeTertiaryLabel)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .textCase(.uppercase)
-            .padding(.horizontal, T.space4)
-            .padding(.vertical, T.space6)
-            .overlay(alignment: .bottom) { self.hairline }
-
-            if visibleRules.isEmpty {
-                self.rulesEmptyState
-            } else if self.viewModel.groupByPolicy {
-                self.groupedRulesList(groups: output.groups, providerLookup: providerLookup)
-            } else {
-                self.flatRulesList(visibleRules: visibleRules, providerLookup: providerLookup)
+                .appSectionCard(padding: T.space4)
+            } header: {
+                self.rulesToolbar
             }
         }
         .onAppear {
@@ -137,9 +68,72 @@ struct RulesTabView: TranslatingView {
         }
     }
 
+    private var rulesSummary: some View {
+        self.tabControlCard {
+            HStack(spacing: T.space4) {
+                self.rulesStatChip(title: self.tr("ui.rule.stats.rules"), value: "\(self.sourceItems.count)")
+                self.rulesStatChip(title: self.tr("ui.rule.stats.sets"),
+                                   value: "\(self.appViewModel.isRemoteTarget || self.runtimeNavigation ? self.proxyStore.providerRuleCount : self.appViewModel.nativeRuleDocument?.providerNames.count ?? 0)")
+                Spacer(minLength: 0)
+                self.compactTopIcon("app.badge", label: self.tr("ui.app_rule.title")) {
+                    await self.appViewModel.openApplicationRuleEditor()
+                }.disabled(!self.appViewModel.canEditApplicationRules)
+                self.compactTopIcon("plus", label: self.tr("ui.quick_rule.add")) {
+                    self.appViewModel.openQuickRuleEditor()
+                }.disabled(!self.appViewModel.canEditQuickRules)
+                self.rulesGroupToggle
+                self.compactTopIcon("arrow.down", label: self.tr("ui.diagnostics.sort_hits"),
+                                    toneOverride: self.viewModel.sortByHits ? nativeInfo : nil) {
+                    self.viewModel.sortByHits.toggle()
+                }
+                self.rulesRefreshButton
+            }
+            if self.runtimeNavigation {
+                SheetNote(text: self.tr("ui.diagnostics.runtime_only_rules"))
+            } else if !self.appViewModel.isRemoteTarget {
+                HStack(spacing: T.space6) {
+                    Text(self.appViewModel.selectedConfigName).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                    SemanticTag(text: self.tr(self.appViewModel.nativeRulesMatchRuntime ? "ui.native_rule.active" : "ui.native_rule.file_only"),
+                                tint: self.appViewModel.nativeRulesMatchRuntime ? self.nativeTeal : self.nativeSecondaryLabel, monospaced: false)
+                }
+                .font(.app(size: T.FontSize.caption)).foregroundStyle(.secondary)
+                if let message = self.appViewModel.nativeRuleDocumentError ?? self.appViewModel.nativeRuleSaveNotice {
+                    SheetNote(text: message)
+                }
+            }
+            if !self.appViewModel.ruleNavigationIDs.isEmpty {
+                HStack {
+                    Text(self.tr("ui.diagnostics.navigation_candidates", self.viewModel.output.rules.count))
+                    Spacer(minLength: 0)
+                    Button(self.tr("ui.diagnostics.clear_navigation")) { self.appViewModel.ruleNavigationIDs = [] }
+                }
+                .font(.app(size: T.FontSize.caption))
+            }
+        }
+    }
+
+    private var rulesToolbar: some View {
+        VStack(spacing: T.space8) {
+            self.tabControlCard {
+                self.rulesFilterControls
+            }
+            HStack(spacing: 0) {
+                Color.clear.frame(width: 24)
+                Text(self.tr("ui.rules.column.target_type")).frame(width: 132, alignment: .leading).padding(.trailing, T.space6)
+                Text(self.tr("ui.rules.column.policy")).frame(width: 90, alignment: .leading)
+                Text(self.tr("ui.diagnostics.hits_column")).frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .font(.app(size: T.FontSize.caption, weight: .medium)).foregroundStyle(.secondary)
+            .padding(.horizontal, T.space8)
+            .padding(.bottom, T.space4)
+        }
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: T.cardCornerRadius))
+    }
+
     private var hairline: some View {
         Rectangle()
-            .fill(nativeSeparator)
+            .fill(nativeSeparator.opacity(0.45))
             .frame(height: T.stroke)
     }
 
@@ -158,8 +152,8 @@ struct RulesTabView: TranslatingView {
         self.viewModel.groupByPolicy = false
     }
 
-    var rulesControlCard: some View {
-        self.tabControlCard {
+    private var rulesFilterControls: some View {
+        VStack(alignment: .leading, spacing: T.space8) {
             HStack(spacing: T.space4) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: T.space4) {
@@ -182,7 +176,7 @@ struct RulesTabView: TranslatingView {
                     Picker(self.tr("ui.native_rule.source"), selection: self.$viewModel.customOnly) {
                         Text(self.tr("ui.native_rule.all")).tag(false)
                         Text(self.tr("ui.native_rule.custom_short")).tag(true)
-                    }.labelsHidden().frame(width: 90)
+                    }.labelsHidden().controlSize(.small).frame(width: 84)
                 }
             }
         }
@@ -364,16 +358,22 @@ struct RulesTabView: TranslatingView {
 
             VStack(alignment: .leading, spacing: T.space1) {
                 Text(targetText)
-                    .font(.app(size: T.FontSize.body, weight: .medium))
+                    .font(.appMono(size: T.FontSize.callout, weight: .medium))
                     .foregroundStyle(nativePrimaryLabel)
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                Text(rule.nativeEntry.map { "#\($0.index + 1) · " + ($0.isCustom ? self.tr("ui.native_rule.custom_short") + " · " : "") + typeText } ?? typeText)
-                    .font(.app(size: T.FontSize.caption, weight: .regular))
-                    .foregroundStyle(nativeTertiaryLabel)
-                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: T.space4) {
+                    if let entry = rule.nativeEntry {
+                        Text("#\(entry.index + 1)").font(.appMono(size: T.FontSize.micro)).foregroundStyle(.secondary)
+                        if entry.isCustom {
+                            Image(systemName: "star.fill").font(.app(size: T.FontSize.micro)).foregroundStyle(self.nativeTeal)
+                                .help(self.tr("ui.native_rule.custom_short"))
+                        }
+                    }
+                    SemanticTag(text: typeText, tint: iconSpec.color)
+                }
             }
-            .frame(width: displaysPolicy ? 120 : 120 + 90 + T.space6, alignment: .leading)
+            .frame(width: displaysPolicy ? 132 : 132 + 90 + T.space6, alignment: .leading)
             .padding(.trailing, T.space6)
 
             if displaysPolicy {
@@ -408,6 +408,7 @@ struct RulesTabView: TranslatingView {
         .padding(.horizontal, T.space4)
         .frame(height: T.rowHeight)
         .background(nativeHoverRowBackground(hovered))
+        .help(rule.nativeEntry?.raw ?? "\(typeText),\(targetText),\(policyText)")
         .onHover { self.hoveredRuleKey = self.nextHovered(
             current: self.hoveredRuleKey, target: rowKey, isHovering: $0) }
         .contextMenu {

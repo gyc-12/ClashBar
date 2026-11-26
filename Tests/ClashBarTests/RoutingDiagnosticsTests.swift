@@ -163,21 +163,25 @@ struct RoutingDiagnosticsTests {
         model.applyMeasuredNodeDelays(["DIRECT": 24, "Hong Kong": 89, "US Premium": 152], testURL: "https://www.gstatic.com/generate_204", measuredAt: Date().addingTimeInterval(-180))
         let root = ProxyGroupsViewModel()
         root.updateFilteredProxyGroups(from: model.proxyGroups, hideHiddenGroups: false, currentMode: .rule)
+        model.statusBarDisplayMode = .iconOnly
         for language in AppLanguage.allCases {
             model.uiLanguage = language
             for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
-                try self.render(ConnectionDetailView(snapshot: connection).environmentObject(model).environmentObject(model.connectionsStore).environmentObject(model.proxyStore).environment(\.colorScheme, scheme), size: CGSize(width: 460, height: 620), scheme: scheme, path: directory.appendingPathComponent("connection-\(language.rawValue)-\(name).png"))
-                try self.render(ProxyGroupDetailView(name: "OpenAI").environmentObject(model).environmentObject(model.proxyStore).environment(\.colorScheme, scheme), size: CGSize(width: 460, height: 560), scheme: scheme, path: directory.appendingPathComponent("group-\(language.rawValue)-\(name).png"))
-                try self.render(ScrollView { RulesTabView().environmentObject(model).environmentObject(model.proxyStore) }.environment(\.colorScheme, scheme), size: CGSize(width: 344, height: 460), scheme: scheme, path: directory.appendingPathComponent("hits-\(language.rawValue)-\(name).png"))
-                try self.render(ProxyTabView(rootViewModel: root).environmentObject(model).environmentObject(model.proxyStore).environmentObject(model.trafficStore).environmentObject(model.connectionsStore).environment(\.colorScheme, scheme), size: CGSize(width: 344, height: 440), scheme: scheme, path: directory.appendingPathComponent("proxy-panel-\(language.rawValue)-\(name).png"))
+                let sheetSize = CGSize(width: MenuBarLayoutTokens.Sheet.wideWidth, height: MenuBarLayoutTokens.Sheet.height)
+                try self.render(ConnectionDetailView(snapshot: connection).environmentObject(model).environmentObject(model.connectionsStore).environmentObject(model.proxyStore).environment(\.colorScheme, scheme).defaultAppStorage(model.defaults), size: sheetSize, scheme: scheme, path: directory.appendingPathComponent("connection-\(language.rawValue)-\(name).png"))
+                try self.render(ProxyGroupDetailView(name: "OpenAI").environmentObject(model).environmentObject(model.proxyStore).environment(\.colorScheme, scheme).defaultAppStorage(model.defaults), size: sheetSize, scheme: scheme, path: directory.appendingPathComponent("group-\(language.rawValue)-\(name).png"))
+                try self.render(ScrollView { RulesTabView().environmentObject(model).environmentObject(model.proxyStore) }.environment(\.colorScheme, scheme).defaultAppStorage(model.defaults), size: CGSize(width: MenuBarLayoutTokens.contentWidth, height: 460), scheme: scheme, path: directory.appendingPathComponent("hits-\(language.rawValue)-\(name).png"))
+                try self.render(ScrollView { ProxyTabView(rootViewModel: root).environmentObject(model).environmentObject(model.proxyStore).environmentObject(model.trafficStore).environmentObject(model.connectionsStore) }.environment(\.colorScheme, scheme).defaultAppStorage(model.defaults), size: CGSize(width: MenuBarLayoutTokens.contentWidth, height: 680), scheme: scheme, path: directory.appendingPathComponent("proxy-panel-\(language.rawValue)-\(name).png"))
             }
         }
     }
 
     private func render<Content: View>(_ content: Content, size: CGSize, scheme: ColorScheme, path: URL) throws {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.contentView = nil; window.close() }
         window.appearance = NSAppearance(named: scheme == .light ? .aqua : .darkAqua)
-        let host = NSHostingView(rootView: content.background(scheme == .light ? Color.white : Color.black))
+        let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)))
         window.contentView = host
         host.frame = NSRect(origin: .zero, size: size)
         host.layoutSubtreeIfNeeded()

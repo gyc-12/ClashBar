@@ -1,9 +1,9 @@
-"ui.tab.proxy" = "Node";
+"ui.tab.proxy" = "Proxy";
 "ui.menu.quick" = "Quick Actions";
-"ui.tab.rules" = "Rule";
-"ui.tab.connections" = "Connection";
-"ui.tab.logs" = "Log";
-"ui.tab.system" = "Setting";
+"ui.tab.rules" = "Rules";
+"ui.tab.connections" = "Connections";
+"ui.tab.logs" = "Logs";
+"ui.tab.system" = "System";
 
 "ui.log_filter.all" = "All";
 "ui.log_filter.info" = "Info";
@@ -77,7 +77,7 @@
 "ui.quick.switch_config" = "Switch Config";
 "ui.quick.system_proxy" = "System Proxy";
 "ui.quick.tun_mode" = "TUN Mode";
-"ui.quick.tun_stack_switch_hint" = "Double-click to switch TUN stack";
+"ui.quick.tun_stack_switch_hint" = "Choose a stack to enable TUN";
 "ui.quick.copy_terminal" = "Copy Terminal Command";
 "ui.quick.copy_terminal_current_endpoint" = "Copy Current Endpoint Command";
 "ui.quick.reload_config_list" = "Reload Config List";
@@ -214,7 +214,7 @@
 "ui.common.na" = "-";
 "ui.common.unknown" = "--";
 "ui.common.timeout" = "Timeout";
-"ui.common.latency_ms" = "%dms";
+"ui.common.latency_ms" = "%d ms";
 "ui.system_proxy.helper_install" = "Install";
 "ui.system_proxy.helper_install.ready" = "Installed";
 "ui.system_proxy.helper_install.missing" = "Not installed";
@@ -594,3 +594,19 @@
 "ui.proxy_provider.error.source" = "The isolated core could not load the subscriptions. Check the links, group dependencies, and network access.";
 "ui.proxy_provider.error.reload" = "The running core did not load the expected providers or groups.";
 "ui.proxy_provider.error.empty_groups" = "These groups would have no usable members: %@. Choose a fallback to continue.";
+
+// Native panel presentation
+"ui.navigation.mode" = "Proxy mode";
+"ui.navigation.pages" = "Pages";
+"ui.action.open_webui" = "Open WebUI";
+"ui.controller.lan_warning" = "The controller is bound to 0.0.0.0 and can be accessed from your LAN.";
+"ui.traffic.download" = "Download";
+"ui.traffic.upload" = "Upload";
+"ui.traffic.total" = "Total %@";
+"ui.traffic.connections" = "%d connections";
+"ui.traffic.memory" = "Memory usage";
+"ui.quick.on" = "On";
+"ui.quick.off" = "Off";
+"ui.quick.applying" = "Applying";
+"ui.quick.terminal" = "Terminal";
+"ui.quick.tun_stack" = "TUN stack";

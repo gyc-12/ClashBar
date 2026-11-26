@@ -22,11 +22,11 @@ struct ConnectionsTabView: TranslatingView {
         static let topPayloadMinWidth: CGFloat = 14
         static let rowContentWidth: CGFloat =
             T.panelWidth
-                - (T.space8 * 2)
-                - (T.space4 * 2)
+                - (T.panelInset * 2)
+                - (T.space4 * 4)
                 - T.rowLeadingIcon
                 - (T.space6 * 2)
-                - 12
+                - 20
     }
 
     private static var textWidthCache: [String: CGFloat] = [:]
@@ -34,17 +34,20 @@ struct ConnectionsTabView: TranslatingView {
     var body: some View {
         let connections = self.viewModel.visibleConnections
 
-        return VStack(alignment: .leading, spacing: T.space6) {
-            self.connectionsControlCard
-
-            if connections.isEmpty {
-                emptyCard(self.tr("ui.empty.connections"))
-            } else {
-                LazyVStack(spacing: 0) {
-                    SeparatedForEach(data: connections, id: \.id, separator: nativeSeparator) { conn in
-                        self.connectionRow(conn)
+        return LazyVStack(alignment: .leading, spacing: T.space8, pinnedViews: [.sectionHeaders]) {
+            Section {
+                if connections.isEmpty {
+                    emptyCard(self.tr("ui.empty.connections"))
+                } else {
+                    LazyVStack(spacing: 0) {
+                        SeparatedForEach(data: connections, id: \.id, separator: nativeSeparator.opacity(0.4)) { conn in
+                            self.connectionRow(conn)
+                        }
                     }
+                    .appSectionCard(padding: T.space4)
                 }
+            } header: {
+                self.connectionsControlCard
             }
         }
         .onAppear {
@@ -170,7 +173,7 @@ struct ConnectionsTabView: TranslatingView {
             self.connectionRowCloseButton(id: conn.id, hovered: hovered)
         }
         .padding(.horizontal, T.space4)
-        .padding(.vertical, T.space2)
+        .padding(.vertical, T.space8)
         .background(nativeHoverRowBackground(hovered))
         .contentShape(Rectangle())
         .onTapGesture { self.appViewModel.connectionDetailContext = conn }
@@ -187,7 +190,7 @@ struct ConnectionsTabView: TranslatingView {
 
         return HStack(spacing: ConnectionsLayout.topLineSpacing) {
             Text(host)
-                .font(.app(size: T.FontSize.body, weight: .semibold))
+                .font(.appMono(size: T.FontSize.callout, weight: .medium))
                 .foregroundStyle(nativePrimaryLabel)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -217,11 +220,8 @@ struct ConnectionsTabView: TranslatingView {
                 text: time,
                 fallback: self.tr("ui.common.na"),
                 width: columnWidth)
-            self.connectionsMetricColumn(
-                symbol: "network",
-                text: network,
-                fallback: self.tr("ui.common.na"),
-                width: columnWidth)
+            SemanticTag(text: network, tint: network == "UDP" ? self.nativeTeal : self.nativeInfo)
+                .frame(width: columnWidth, alignment: .leading)
             self.connectionsMetricColumn(
                 symbol: "arrow.up",
                 text: up,
@@ -243,17 +243,11 @@ struct ConnectionsTabView: TranslatingView {
     }
 
     private func connectionRowCloseButton(id: String, hovered: Bool) -> some View {
-        Button {
-            Task { await self.appViewModel.closeConnection(id: id) }
-        } label: {
-            Image(systemName: "xmark")
-                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                .frame(width: 10, height: 10)
+        self.compactAsyncIconButton(symbol: "xmark", label: self.tr("ui.action.close_connection"),
+                                    tint: self.nativeCritical, role: .destructive, size: 20,
+                                    fontSize: T.FontSize.caption, isRevealed: hovered) {
+            await self.appViewModel.closeConnection(id: id)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(hovered ? nativeSecondaryLabel : nativeTertiaryLabel)
-        .frame(width: 12, height: 12)
-        .opacity(hovered ? 1 : 0)
     }
 
     @ViewBuilder
@@ -306,7 +300,7 @@ struct ConnectionsTabView: TranslatingView {
                 .foregroundStyle(symbolColor)
                 .frame(width: 10, alignment: .leading)
             Text(renderedText)
-                .font(.app(size: T.FontSize.caption, weight: .regular))
+                .font(.appMono(size: T.FontSize.caption))
                 .foregroundStyle(textColor)
                 .lineLimit(1)
                 .truncationMode(truncation)
@@ -316,20 +310,14 @@ struct ConnectionsTabView: TranslatingView {
     }
 
     func connectionsTopBadge(text: String) -> some View {
-        Text(text)
-            .font(.app(size: T.FontSize.caption, weight: .semibold))
-            .foregroundStyle(nativeSecondaryLabel)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .minimumScaleFactor(T.minimumScale)
-            .padding(.horizontal, T.space2)
-            .padding(.vertical, T.space1)
-            .background(nativeBadgeCapsule())
+        let upper = text.uppercased()
+        let tint = upper.contains("DOMAIN") ? self.nativeTeal : upper.contains("PROCESS") ? self.nativePurple : self.nativeInfo
+        return SemanticTag(text: text, tint: tint)
     }
 
     func connectionsTopPayload(text: String) -> some View {
         Text(text)
-            .font(.app(size: T.FontSize.caption, weight: .medium))
+            .font(.appMono(size: T.FontSize.caption, weight: .medium))
             .foregroundStyle(nativeSecondaryLabel)
             .lineLimit(1)
             .truncationMode(.middle)
@@ -372,9 +360,9 @@ struct ConnectionsTabView: TranslatingView {
             self
                 .connectionsMonospacedTextWidth(
                     ruleText,
-                    size: T.FontSize.caption,
-                    weight: .semibold) +
-                4)
+                    size: T.FontSize.micro,
+                    weight: .medium) +
+                T.space12)
         var payloadWidth = max(
             ConnectionsLayout.topPayloadMinWidth,
             self.connectionsMonospacedTextWidth(
