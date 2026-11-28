@@ -24,6 +24,7 @@ struct SystemTabView: TranslatingView {
     @State private var isExceptionsExpanded = false
     @State private var copiedProxyCommandTarget: ProxyCommandCopyTarget?
     @State private var proxyCommandCopyResetTask: Task<Void, Never>?
+    @State private var testURLDraft = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func settingsCardHeader(_ title: String, symbol: String) -> some View {
@@ -514,6 +515,7 @@ struct SystemTabView: TranslatingView {
                     self.tr("ui.settings.show_traffic_chart"),
                     symbol: "chart.xyaxis.line",
                     isOn: self.$showTrafficChart)
+                self.defaultTestURLSection
                 self.settingsSelectionRow(.init(
                     title: self.tr("ui.settings.menu_bar_style"),
                     symbol: "menubar.rectangle",
@@ -656,6 +658,9 @@ struct SystemTabView: TranslatingView {
                         isOn: item.isOn,
                         isDisabled: self.appViewModel.isCoreSettingSyncing)
                 }
+                if !isRemote {
+                    self.nativeDNSIPv6Row
+                }
             }
             .appSectionCard()
 
@@ -730,9 +735,94 @@ struct SystemTabView: TranslatingView {
             }
             .appSectionCard()
         }
+        .onAppear {
+            self.testURLDraft = self.appViewModel.defaultHealthcheckURL
+        }
+        .onChange(of: self.appViewModel.customHealthcheckURL) { _ in
+            self.testURLDraft = self.appViewModel.defaultHealthcheckURL
+        }
         .onDisappear {
             self.proxyCommandCopyResetTask?.cancel()
             self.proxyCommandCopyResetTask = nil
         }
+    }
+
+    private var defaultTestURLSection: some View {
+        let presets: [(label: String, url: String)] = [
+            ("gstatic", AppViewModel.builtInHealthcheckURL),
+            ("Cloudflare", AppViewModel.cloudflareHealthcheckURL),
+        ]
+        return VStack(alignment: .leading, spacing: T.space6) {
+            self.settingsRowLabel(symbol: "speedometer", title: self.tr("ui.settings.test_url"))
+            HStack(spacing: T.space4) {
+                TextField(AppViewModel.builtInHealthcheckURL, text: self.$testURLDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                    .font(.appMono(size: T.FontSize.caption))
+                    .foregroundStyle(self.nativePrimaryLabel)
+                    .onSubmit { self.appViewModel.updateCustomHealthcheckURL(self.testURLDraft) }
+                Button(self.tr("ui.proxy_provider.save")) {
+                    self.appViewModel.updateCustomHealthcheckURL(self.testURLDraft)
+                }
+                .appBorderedButtonStyle()
+                .controlSize(.small)
+                .disabled(self.testURLDraft.trimmed == self.appViewModel.defaultHealthcheckURL)
+            }
+            HStack(spacing: T.space6) {
+                ForEach(presets, id: \.url) { preset in
+                    let selected = self.appViewModel.defaultHealthcheckURL == preset.url
+                    Button {
+                        self.testURLDraft = preset.url
+                        self.appViewModel.updateCustomHealthcheckURL(preset.url)
+                    } label: {
+                        HStack(spacing: 3) {
+                            if selected {
+                                Image(systemName: "checkmark").font(.app(size: 9, weight: .bold))
+                            }
+                            Text(preset.label).font(.app(size: T.FontSize.caption, weight: .medium))
+                        }
+                        .padding(.horizontal, T.space6)
+                        .padding(.vertical, T.space2)
+                        .foregroundStyle(selected ? self.nativeAccent : self.nativeSecondaryLabel)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(selected ? self.nativeAccent.opacity(T.Opacity.tint) : self.nativeBadgeFill))
+                    }
+                    .buttonStyle(.plain)
+                    .help(preset.url)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .menuRowPadding(vertical: T.space6)
+        .overlay(alignment: .bottom) { Divider().opacity(0.4).padding(.leading, 30) }
+    }
+
+    private var nativeDNSIPv6Row: some View {
+        let hasSnapshot = self.appViewModel.nativeDNSSnapshot != nil
+        let isOn = Binding(
+            get: { self.appViewModel.nativeDNSSnapshot?.dnsIPv6 ?? false },
+            set: { value in Task { await self.appViewModel.applyNativeDNSIPv6(value) } })
+        return VStack(alignment: .leading, spacing: T.space4) {
+            HStack(spacing: T.space8) {
+                self.settingsRowLabel(symbol: "network.badge.shield.half.filled", title: self.tr("ui.settings.dns_ipv6"))
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+                if self.appViewModel.isNativeDNSSaving {
+                    ProgressView().controlSize(.mini)
+                }
+                Toggle("", isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .disabled(!hasSnapshot || self.appViewModel.isNativeDNSSaving || self.appViewModel.isQuickRuleSaving || self.appViewModel.isCoreSettingSyncing)
+            }
+            Text(self.tr("ui.settings.dns_ipv6_hint"))
+                .font(.app(size: T.FontSize.caption))
+                .foregroundStyle(self.nativeSecondaryLabel)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 26)
+        }
+        .menuRowPadding(vertical: T.space6)
     }
 }

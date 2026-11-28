@@ -45,14 +45,70 @@ extension AppViewModel {
         guard !self.isRemoteTarget, let url = self.configService.selectedConfig else {
             self.nativeRuleDocument = nil
             self.nativeRuleDocumentError = nil
+            self.nativeDNSSnapshot = nil
             return
         }
+        self.nativeDNSSnapshot = try? NativeDNSSettingsService().read(configURL: url)
         do {
             self.nativeRuleDocument = try self.nativeRuleService.read(configURL: url)
             self.nativeRuleDocumentError = nil
         } catch {
             self.nativeRuleDocument = nil
             self.nativeRuleDocumentError = self.quickRuleErrorText(error)
+        }
+    }
+
+    func applyNativeDNSIPv6(_ enabled: Bool) async {
+        guard !self.isRemoteTarget, !self.isQuickRuleSaving, !self.isCoreSettingSyncing, !self.isTunSyncing,
+              let url = self.configService.selectedConfig else { return }
+        self.refreshNativeRuleDocument()
+        guard let snapshot = self.nativeDNSSnapshot, snapshot.dnsIPv6 != enabled else { return }
+        self.isQuickRuleSaving = true
+        self.isNativeDNSSaving = true
+        self.settingsErrorMessage = nil
+        self.settingsSavedMessage = nil
+        defer {
+            self.isNativeDNSSaving = false
+            self.isQuickRuleSaving = false
+            self.refreshNativeRuleDocument()
+        }
+        do {
+            let edit = try NativeDNSSettingsService().prepareDNSIPv6(enabled, snapshot: snapshot)
+            guard edit.hasChanges else { return }
+            let running = self.processManager.isRunning
+            let activePath = self.appliedProviderConfig?.url ?? self.defaults.string(forKey: self.lastSuccessfulConfigPathKey)
+                .map { self.canonicalProviderPath(URL(fileURLWithPath: $0)) }
+            let activeFile = running && activePath == self.canonicalProviderPath(url)
+            let client: (any MihomoAPITransporting)? = activeFile ? try self.clientOrThrow() : nil
+            var updatedPayload = ""
+            var previousPayload = ""
+            _ = try await self.quickRuleService.commit(
+                edit,
+                validate: { path in
+                    try await self.processManager.validateConfig(configPath: path)
+                    guard !self.isRemoteTarget, self.isSelectedRoutingConfig(url) else {
+                        throw QuickRuleError.contextChanged
+                    }
+                    if let client {
+                        let latest: [String: JSONValue] = try await client.request(.getConfigs)
+                        updatedPayload = try self.quickRuleService.reloadPayload(edit.updatedData, runtime: latest)
+                        previousPayload = try self.quickRuleService.reloadPayload(edit.originalConfig, runtime: latest)
+                    }
+                },
+                didWrite: { self.acknowledgeQuickRuleConfigWrite(url) },
+                apply: {
+                    guard let client else { return }
+                    try await client.requestNoResponse(.putConfigs(force: false, path: "", payload: updatedPayload))
+                },
+                restoreRuntime: {
+                    guard let client else { return }
+                    try await client.requestNoResponse(.putConfigs(force: false, path: "", payload: previousPayload))
+                })
+            if activeFile { self.updateAppliedProviderConfig(after: edit) }
+            self.settingsSavedMessage = self.tr(activeFile ? "ui.settings.dns_ipv6_applied" : "ui.settings.dns_ipv6_saved_file")
+            self.scheduleSettingsFeedbackAutoClearIfNeeded(message: self.settingsSavedMessage ?? "")
+        } catch {
+            self.settingsErrorMessage = self.quickRuleErrorText(error)
         }
     }
 

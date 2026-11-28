@@ -22,7 +22,7 @@ struct MenuBarHeaderView: TranslatingView {
         HStack(alignment: .center, spacing: T.space8) {
             HStack(alignment: .center, spacing: T.space8) {
                 Button {
-                    guard let url = URL(string: "https://github.com/Sitoi/ClashBar") else { return }
+                    guard let url = URL(string: "https://github.com/gyc-12/ClashBar") else { return }
                     self.openURL(url)
                 } label: {
                     ZStack {

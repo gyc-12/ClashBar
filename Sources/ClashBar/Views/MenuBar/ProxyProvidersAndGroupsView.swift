@@ -267,6 +267,8 @@ extension ProxyTabView {
                         Button(tr("ui.sites.title")) { appViewModel.showsSiteChecks = true }
                         Toggle(tr("ui.groups.fold"), isOn: $appViewModel.foldTimeoutNodes)
                         if appViewModel.canManageProxyProviders, let document = appViewModel.nativeProxyProviderDocument {
+                            Button(tr("ui.groups.create")) { appViewModel.openNewGroupEditor() }
+                                .disabled(!appViewModel.canStartProxyProviderEdit)
                             Menu(tr("ui.groups.edit")) {
                                 ForEach(document.groups) { group in
                                     Button(group.name) { appViewModel.openGroupEditor(group.name) }

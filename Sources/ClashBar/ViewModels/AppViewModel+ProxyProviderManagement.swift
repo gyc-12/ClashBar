@@ -19,7 +19,7 @@ struct AppliedProviderConfig {
 struct GroupEditorContext: Identifiable {
     let id = UUID()
     let document: NativeProxyProviderDocument
-    let group: NativeProxyProviderGroup
+    let group: NativeProxyProviderGroup?
     let willReload: Bool
     let isSubscription: Bool
 }
@@ -98,6 +98,14 @@ extension AppViewModel {
             isSubscription: remoteConfigSubscriptions[document.configURL.lastPathComponent] != nil)
     }
 
+    func openNewGroupEditor() {
+        guard canStartProxyProviderEdit else { return }
+        refreshNativeProxyProviderDocument()
+        guard let document = nativeProxyProviderDocument else { return }
+        groupEditorContext = GroupEditorContext(document: document, group: nil, willReload: nativeProvidersMatchRunningConfig,
+            isSubscription: remoteConfigSubscriptions[document.configURL.lastPathComponent] != nil)
+    }
+
     func saveProxyProvider(_ action: NativeProxyProviderAction, document: NativeProxyProviderDocument,
                            fallback: NativeProxyProviderService.Fallback?) async throws -> Bool {
         guard self.canStartProxyProviderEdit, self.isSelectedRoutingConfig(document.configURL) else { throw QuickRuleError.contextChanged }
@@ -158,6 +166,7 @@ extension AppViewModel {
             catch { throw NativeProxyProviderError.sourceFailed }
             var empty = Self.emptyAffectedGroups(candidate, in: inspected?.groups ?? [:])
             if case .group = action, !empty.isEmpty { throw NativeProxyProviderError.emptyGroups(empty.sorted()) }
+            if case .configureGroup = action, !empty.isEmpty { throw NativeProxyProviderError.emptyGroups(empty.sorted()) }
             if !empty.isEmpty {
                 // Leave groups already falling back before this edit alone.
                 let before: [String: ProxyGroup]
@@ -223,6 +232,11 @@ extension AppViewModel {
                         guard members == nil ? resolved.proxies[name] == nil : resolved.proxies[name]?.all == inspected?.groups[name]?.all
                         else { throw NativeProxyProviderError.reloadFailed }
                     }
+                    if case let .configureGroup(rawName, _, _) = action {
+                        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard resolved.proxies[name]?.all == inspected?.groups[name]?.all
+                        else { throw NativeProxyProviderError.reloadFailed }
+                    }
                     guard self.processManager.status == status, Set(native.keys) == nextNames,
                           native.values.allSatisfy({ $0.proxies?.isEmpty == false }),
                           freshCache.map({ FileManager.default.fileExists(atPath: $0.path) }) ?? true,
@@ -260,6 +274,7 @@ extension AppViewModel {
         if activeFile { self.rememberAppliedProviderConfig(url: document.configURL, data: candidate.file.updatedData) }
         self.nativeProxyProviderNotice = self.tr(activeFile ? "ui.proxy_provider.saved" : "ui.native_rule.saved_file")
         if case .group = action, activeFile { self.nativeProxyProviderNotice = self.tr("ui.groups.saved") }
+        if case .configureGroup = action, activeFile { self.nativeProxyProviderNotice = self.tr("ui.groups.saved") }
         if let retryRoute { self.nativeProxyProviderNotice = [self.nativeProxyProviderNotice, self.tr("ui.subscription.retried", retryRoute)].compactMap { $0 }.joined(separator: " ") }
         return activeFile
     }
@@ -279,6 +294,7 @@ extension AppViewModel {
         case .invalidConfig: return self.tr("ui.proxy_provider.error.config")
         case .groupCycle: return self.tr("ui.groups.cycle")
         case .invalidOptions: return self.tr("ui.subscription.invalid_options")
+        case .invalidRegex: return self.tr("ui.groups.invalid_regex")
         case .retryFailed(let route): return self.tr("ui.subscription.retry_failed", route)
         case .groupReferences(let paths): return self.tr("ui.groups.references", paths.joined(separator: ", "))
         case .invalidName: return self.tr("ui.proxy_provider.error.name")

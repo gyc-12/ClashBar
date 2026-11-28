@@ -88,6 +88,7 @@ enum Endpoint {
     case closeConnection(id: String)
     case flushFakeIPCache
     case flushDNSCache
+    case dnsQuery(name: String, type: String)
     case upgradeCore
     case upgradeGeo
 
@@ -95,7 +96,7 @@ enum Endpoint {
         switch self {
         case .version, .traffic, .memory, .logs, .getConfigs, .groupDelay, .proxies, .proxyDelay, .proxyProviders,
              .proxyProvider, .proxyProviderHealthcheck, .proxyProviderProxyHealthcheck, .rules,
-             .ruleProviders, .connections:
+             .ruleProviders, .connections, .dnsQuery:
             .get
         case .putConfigs, .switchProxy, .updateProxyProvider, .updateRuleProvider:
             .put
@@ -136,6 +137,7 @@ enum Endpoint {
         case let .closeConnection(id): "/connections/\(id.urlPathSegmentEscaped)"
         case .flushFakeIPCache: "/cache/fakeip/flush"
         case .flushDNSCache: "/cache/dns/flush"
+        case .dnsQuery: "/dns/query"
         case .upgradeCore: "/upgrade"
         case .upgradeGeo: "/upgrade/geo"
         }
@@ -155,6 +157,8 @@ enum Endpoint {
             self.healthcheckQueryItems(url: url, timeout: timeout)
         case let .connections(interval):
             self.optionalQueryItem(name: "interval", value: interval.map(String.init))
+        case let .dnsQuery(name, type):
+            [URLQueryItem(name: "name", value: name), URLQueryItem(name: "type", value: type)]
         default:
             []
         }
@@ -189,6 +193,8 @@ enum Endpoint {
             max(5, TimeInterval(timeout) / 1000.0 + 2)
         case .upgradeCore, .upgradeGeo, .putConfigs, .updateProxyProvider:
             60
+        case .dnsQuery:
+            6
         default:
             2
         }

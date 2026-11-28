@@ -35,8 +35,16 @@ if [ -n "$TARGET_ARCH" ]; then
   BUILD_ARGS+=(--arch "$TARGET_ARCH")
 fi
 swift build "${BUILD_ARGS[@]}"
+SWIFT_BIN_DIR="$(swift build "${BUILD_ARGS[@]}" --show-bin-path 2>/dev/null || true)"
 
-if [ -n "$TARGET_ARCH" ]; then
+if [ -n "$SWIFT_BIN_DIR" ] && [ -f "$SWIFT_BIN_DIR/ClashBar" ]; then
+  BIN_CANDIDATE="$SWIFT_BIN_DIR/ClashBar"
+  RESOURCE_BUNDLE_CANDIDATE="$SWIFT_BIN_DIR/ClashBar_ClashBar.bundle"
+  HELPER_BIN_CANDIDATE="$SWIFT_BIN_DIR/ClashBarProxyHelper"
+  BIN_PATTERN="*/ClashBar"
+  RESOURCE_BUNDLE_PATTERN="*/ClashBar_ClashBar.bundle"
+  HELPER_PATTERN="*/ClashBarProxyHelper"
+elif [ -n "$TARGET_ARCH" ]; then
   BIN_CANDIDATE="$ROOT/.build/${TARGET_ARCH}-apple-macosx/release/ClashBar"
   RESOURCE_BUNDLE_CANDIDATE="$ROOT/.build/${TARGET_ARCH}-apple-macosx/release/ClashBar_ClashBar.bundle"
   HELPER_BIN_CANDIDATE="$ROOT/.build/${TARGET_ARCH}-apple-macosx/release/ClashBarProxyHelper"

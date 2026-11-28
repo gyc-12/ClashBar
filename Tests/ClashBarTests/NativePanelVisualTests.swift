@@ -113,10 +113,10 @@ struct NativePanelVisualTests {
                 let editGroup = try #require(providerDocument.groups.first)
                 let context = GroupEditorContext(document: providerDocument, group: editGroup, willReload: true, isSubscription: true)
                 try self.render(NativeGroupEditorView(context: context), model: model,
-                                size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.height),
+                                size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.tallHeight),
                                 scheme: scheme, path: directory.appendingPathComponent("sheet-group-editor-\(suffix)"))
                 try self.render(SiteReachabilityView(), model: model,
-                                size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.height),
+                                size: CGSize(width: MenuBarLayoutTokens.Sheet.wideWidth, height: MenuBarLayoutTokens.Sheet.tallHeight),
                                 scheme: scheme, path: directory.appendingPathComponent("sheet-site-checks-\(suffix)"))
                 for operation in [ProxyProviderEditorContext.Operation.add, .edit, .enable, .disable, .delete] {
                     let entry = operation == .add ? nil : providerDocument.entries.first { $0.enabled == (operation != .enable) }

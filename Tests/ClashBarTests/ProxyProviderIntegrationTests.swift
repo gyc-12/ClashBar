@@ -178,12 +178,18 @@ struct ProxyProviderIntegrationTests {
         let afterRename: ProviderSummary = try await client.request(.proxyProviders)
         #expect(afterRename.providers["Routed"] == nil)
         #expect(afterRename.providers["RenamedRouted"]?.proxies?.map(\.name) == ["first"])
-        let renamedDoc = try #require(model.nativeProxyProviderDocument)
+        try await apply(.configureGroup(
+            name: "FilteredNew",
+            draft: NativeGroupDraft(type: "url-test", members: [], use: ["RenamedRouted"], includeAllProviders: false, filter: "^first$"),
+            create: true))
+        let createdGroups: ProxyGroupsResponse = try await client.request(.proxies)
+        #expect(createdGroups.proxies["FilteredNew"]?.all == ["first"])
+        let createdDoc = try #require(model.nativeProxyProviderDocument)
         do {
             try await apply(.add(name: "Invalid", url: gated + "/invalid", interval: nil, healthCheckURL: source, groups: []))
             Issue.record("Expected both download routes to fail")
         } catch { #expect(error as? NativeProxyProviderError == .retryFailed("proxy")) }
-        #expect(try Data(contentsOf: environment.config) == renamedDoc.data)
+        #expect(try Data(contentsOf: environment.config) == createdDoc.data)
         #expect(core.status == pid)
     }
 

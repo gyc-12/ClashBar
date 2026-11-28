@@ -3,6 +3,7 @@ import Foundation
 enum ReachabilitySite: String, CaseIterable, Identifiable, Sendable {
     case gemini = "Gemini"
     case chatGPTRegion = "ChatGPTRegion"
+    case claudeRegion = "ClaudeRegion"
     case chatGPT = "ChatGPT"
     case youtube = "YouTube"
 
@@ -12,6 +13,7 @@ enum ReachabilitySite: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .gemini: "Gemini"
         case .chatGPTRegion, .chatGPT: "ChatGPT"
+        case .claudeRegion: "Claude"
         case .youtube: "YouTube"
         }
     }
@@ -20,6 +22,7 @@ enum ReachabilitySite: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .gemini: GeminiRegionProbe.url
         case .chatGPTRegion, .chatGPT: GeminiRegionProbe.chatGPTURL
+        case .claudeRegion: NetworkDiagnosticsProbe.claudeURL
         case .youtube: "https://www.youtube.com/"
         }
     }
@@ -30,6 +33,8 @@ enum ReachabilitySite: String, CaseIterable, Identifiable, Sendable {
             return await GeminiRegionProbe.check(client: client, host: proxyHost)
         case .chatGPTRegion:
             return await GeminiRegionProbe.checkChatGPT(client: client, host: proxyHost)
+        case .claudeRegion:
+            return await NetworkDiagnosticsProbe.checkClaude(client: client, host: proxyHost)
         case .chatGPT, .youtube:
             guard let group else { return .controllerError }
             do {

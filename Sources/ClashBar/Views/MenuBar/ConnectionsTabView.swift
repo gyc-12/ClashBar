@@ -12,6 +12,7 @@ struct ConnectionsTabView: TranslatingView {
     @AppStorage("clashbar.connections.sort_option") private var storedSortOptionRawValue =
         ConnectionsSortOption.default.rawValue
     @StateObject private var viewModel = ConnectionsViewModel()
+    @State private var confirmCloseAll = false
 
     private enum ConnectionsLayout {
         static let topLineSpacing: CGFloat = T.space2
@@ -58,6 +59,18 @@ struct ConnectionsTabView: TranslatingView {
         .onChange(of: self.viewModel.filterText) { _ in self.refreshData() }
         .onChange(of: self.viewModel.transportFilter) { _ in self.refreshData() }
         .onChange(of: self.viewModel.sortOption) { _ in self.refreshData() }
+        .alert(self.tr("ui.connections.close_all_confirm_title"), isPresented: self.$confirmCloseAll) {
+            Button(self.tr("ui.action.cancel"), role: .cancel) {}
+            Button(self.tr("ui.action.close_all"), role: .destructive) {
+                Task { await self.appViewModel.closeAllConnections() }
+            }
+        } message: {
+            let targetName: String = switch self.appViewModel.remoteMachineStore.activeTarget {
+            case .local: self.tr("ui.machine.local_label")
+            case let .remote(machine): machine.name
+            }
+            Text(self.tr("ui.connections.close_all_confirm_message", targetName))
+        }
     }
 
     private func refreshData() {
@@ -103,14 +116,28 @@ struct ConnectionsTabView: TranslatingView {
                     current: self.viewModel.visibleConnections.count,
                     total: min(self.connectionsStore.connections.count, 120))
 
-                self.compactTopIcon(
-                    "xmark",
-                    label: self.tr("ui.action.close_all"),
-                    warning: true)
-                {
-                    await self.appViewModel.closeAllConnections()
+                let hasFilter = !self.viewModel.filterText.trimmed.isEmpty || self.viewModel.transportFilter != .all
+                let filteredIDs = self.viewModel.visibleConnections.map(\.id)
+                Menu {
+                    if hasFilter, !filteredIDs.isEmpty {
+                        Button(self.tr("ui.connections.close_filtered", filteredIDs.count)) {
+                            Task { await self.appViewModel.closeConnections(ids: filteredIDs) }
+                        }
+                    }
+                    Button(self.tr("ui.connections.close_all_menu"), role: .destructive) {
+                        self.confirmCloseAll = true
+                    }
+                    .disabled(self.connectionsStore.connections.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.app(size: T.FontSize.body, weight: .medium))
+                        .foregroundStyle(self.nativeSecondaryLabel)
                 }
-                .help(self.tr("ui.action.close_all"))
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .accessibilityLabel(self.tr("ui.connections.actions"))
+                .help(self.tr("ui.connections.actions"))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

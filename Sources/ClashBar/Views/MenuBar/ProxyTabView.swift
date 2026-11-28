@@ -286,34 +286,79 @@ extension ProxyTabView {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    @ViewBuilder
     var trafficOverview: some View {
-        VStack(alignment: .leading, spacing: T.space6) {
-            HStack(spacing: T.space8) {
-                self.compactSpeedItem(symbol: "arrow.down", tint: self.nativePositive,
-                                      rate: self.trafficStore.traffic.down,
-                                      total: self.trafficStore.displayDownTotal,
-                                      label: self.tr("ui.traffic.download"))
-                self.compactSpeedItem(symbol: "arrow.up", tint: self.nativeInfo,
-                                      rate: self.trafficStore.traffic.up,
-                                      total: self.trafficStore.displayUpTotal,
-                                      label: self.tr("ui.traffic.upload"))
-                Spacer(minLength: 0)
-                HStack(spacing: T.space6) {
-                    Label("\(self.connectionsStore.connectionsCount)", systemImage: "link")
-                        .help(self.tr("ui.traffic.connections", self.connectionsStore.connectionsCount))
-                        .accessibilityLabel(self.tr("ui.traffic.connections", self.connectionsStore.connectionsCount))
-                    Label(ValueFormatter.bytesInteger(self.trafficStore.memory.inuse), systemImage: "memorychip")
-                        .help(self.tr("ui.traffic.memory"))
-                        .accessibilityLabel(self.tr("ui.traffic.memory") + ": " + ValueFormatter.bytesInteger(self.trafficStore.memory.inuse))
+        if !self.appViewModel.isRuntimeRunning {
+            self.stoppedCoreStatusCard
+        } else {
+            VStack(alignment: .leading, spacing: T.space6) {
+                HStack(spacing: T.space8) {
+                    self.compactSpeedItem(symbol: "arrow.down", tint: self.nativePositive,
+                                          rate: self.trafficStore.traffic.down,
+                                          total: self.trafficStore.displayDownTotal,
+                                          label: self.tr("ui.traffic.download"))
+                    self.compactSpeedItem(symbol: "arrow.up", tint: self.nativeInfo,
+                                          rate: self.trafficStore.traffic.up,
+                                          total: self.trafficStore.displayUpTotal,
+                                          label: self.tr("ui.traffic.upload"))
+                    Spacer(minLength: 0)
+                    HStack(spacing: T.space6) {
+                        Label("\(self.connectionsStore.connectionsCount)", systemImage: "link")
+                            .help(self.tr("ui.traffic.connections", self.connectionsStore.connectionsCount))
+                            .accessibilityLabel(self.tr("ui.traffic.connections", self.connectionsStore.connectionsCount))
+                        Label(ValueFormatter.bytesInteger(self.trafficStore.memory.inuse), systemImage: "memorychip")
+                            .help(self.tr("ui.traffic.memory"))
+                            .accessibilityLabel(self.tr("ui.traffic.memory") + ": " + ValueFormatter.bytesInteger(self.trafficStore.memory.inuse))
+                    }
+                    .font(.appMono(size: T.FontSize.caption))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
-                .font(.appMono(size: T.FontSize.caption))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
+                if self.showTrafficChart {
+                    TrafficSparklineView(upValues: self.trafficStore.trafficHistoryUp, downValues: self.trafficStore.trafficHistoryDown)
+                        .frame(height: 52)
+                }
             }
-            if self.showTrafficChart {
-                TrafficSparklineView(upValues: self.trafficStore.trafficHistoryUp, downValues: self.trafficStore.trafficHistoryDown)
-                    .frame(height: 52)
+            .appSectionCard(padding: T.space8)
+        }
+    }
+
+    private var stoppedCoreStatusCard: some View {
+        let isRemote = self.appViewModel.isRemoteTarget
+        let hasConfig = self.appViewModel.configService.selectedConfig != nil
+        let symbol = isRemote ? "network.slash" : hasConfig ? "stop.circle" : "doc.badge.plus"
+        let tint = isRemote ? self.nativeWarning : hasConfig ? self.nativeSecondaryLabel : self.nativeInfo
+        let titleKey = isRemote ? "ui.proxy.status.remote_unreachable"
+            : hasConfig ? "ui.proxy.status.core_stopped" : "ui.proxy.status.no_config"
+
+        return HStack(spacing: T.space8) {
+            IconBadge(symbol: symbol, tint: tint, size: 22)
+            Text(self.tr(titleKey))
+                .font(.app(size: T.FontSize.callout, weight: .medium))
+                .foregroundStyle(self.nativePrimaryLabel)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: T.space4)
+            if isRemote {
+                Button(self.tr("ui.action.refresh")) {
+                    Task { await self.appViewModel.refreshFromAPI(includeSlowCalls: true) }
+                }
+                .appBorderedButtonStyle()
+                .controlSize(.small)
+            } else if hasConfig {
+                Button(self.tr("app.primary.start")) {
+                    Task { await self.appViewModel.startCore(trigger: .manual) }
+                }
+                .appBorderedButtonStyle(prominent: true)
+                .controlSize(.small)
+                .disabled(self.appViewModel.isCoreActionProcessing)
+            } else {
+                Button(self.tr("ui.quick.import_local_config")) {
+                    self.appViewModel.importLocalConfigFile()
+                }
+                .appBorderedButtonStyle(prominent: true)
+                .controlSize(.small)
             }
         }
         .appSectionCard(padding: T.space8)

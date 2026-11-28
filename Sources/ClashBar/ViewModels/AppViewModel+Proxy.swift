@@ -444,6 +444,18 @@ extension AppViewModel {
             })
     }
 
+    func closeConnections(ids: [String]) async {
+        guard !ids.isEmpty else { return }
+        await self.runConnectionMutation(
+            actionName: tr("log.action_name.close_all_connections"),
+            operation: {
+                let client = try self.clientOrThrow()
+                for id in ids {
+                    try? await client.requestNoResponse(.closeConnection(id: id))
+                }
+            })
+    }
+
     func copyAllLogs() {
         self.flushPendingMihomoLogsIfNeeded()
         let content = errorLogs

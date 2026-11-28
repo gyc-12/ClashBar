@@ -70,9 +70,12 @@ final class AppViewModel: ObservableObject {
     @Published var nativeProxyProviderDocument: NativeProxyProviderDocument?
     @Published var nativeProxyProviderError: String?
     @Published var nativeProxyProviderNotice: String?
+    @Published var nativeDNSSnapshot: NativeDNSSnapshot?
+    @Published var isNativeDNSSaving = false
     @Published var proxyProviderEditorContext: ProxyProviderEditorContext?
     @Published var groupEditorContext: GroupEditorContext?
     @Published var showsSiteChecks = false
+    @Published var customHealthcheckURL: String = ""
     @Published var appliedProviderConfig: AppliedProviderConfig?
     var proxyProviderPresentationGeneration = 0
     var isProxyProviderSaving = false
@@ -462,7 +465,47 @@ final class AppViewModel: ObservableObject {
     let backgroundLowFrequencyIntervalNanoseconds: UInt64 = 120_000_000_000
     let trafficPublishIntervalNanoseconds: UInt64 = 500_000_000
 
-    let defaultHealthcheckURL = "https://www.gstatic.com/generate_204"
+    static let builtInHealthcheckURL = "https://www.gstatic.com/generate_204"
+    static let cloudflareHealthcheckURL = "https://cp.cloudflare.com/generate_204"
+    let customHealthcheckURLKey = "clashbar.proxy.healthcheck.url.v1"
+
+    var defaultHealthcheckURL: String {
+        let trimmed = self.customHealthcheckURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URLComponents(string: trimmed)?.url,
+           let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+           url.host?.isEmpty == false {
+            return trimmed
+        }
+        return Self.builtInHealthcheckURL
+    }
+
+    @discardableResult
+    func updateCustomHealthcheckURL(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            self.customHealthcheckURL = ""
+            self.defaults.removeObject(forKey: self.customHealthcheckURLKey)
+            self.settingsErrorMessage = nil
+            self.settingsSavedMessage = self.tr("ui.settings.test_url_saved")
+            self.scheduleSettingsFeedbackAutoClearIfNeeded(message: self.settingsSavedMessage ?? "")
+            return true
+        }
+        guard !trimmed.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) }),
+              let url = URLComponents(string: trimmed)?.url,
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else {
+            self.settingsSavedMessage = nil
+            self.settingsErrorMessage = self.tr("ui.settings.test_url_invalid")
+            return false
+        }
+        self.customHealthcheckURL = trimmed
+        self.defaults.set(trimmed, forKey: self.customHealthcheckURLKey)
+        self.settingsErrorMessage = nil
+        self.settingsSavedMessage = self.tr("ui.settings.test_url_saved")
+        self.scheduleSettingsFeedbackAutoClearIfNeeded(message: self.settingsSavedMessage ?? "")
+        return true
+    }
+
     let defaultHealthcheckTimeoutMilliseconds = 5000
     var mediumFrequencyIntervalNanoseconds: UInt64 = 4_000_000_000
     var lowFrequencyIntervalNanoseconds: UInt64 = 20_000_000_000
@@ -514,6 +557,7 @@ final class AppViewModel: ObservableObject {
         self.bundlesMihomoCore = Self.resolveBundledMihomoCoreFlag()
         self.uiLanguage = loadPersistedUILanguage()
         self.appearanceMode = loadPersistedAppearanceMode()
+        self.customHealthcheckURL = defaults.string(forKey: self.customHealthcheckURLKey) ?? ""
         applyAppAppearance()
         configureStreamCoordinator()
         refreshLaunchAtLoginStatus()

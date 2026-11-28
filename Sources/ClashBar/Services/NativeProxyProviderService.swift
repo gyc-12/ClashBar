@@ -14,10 +14,27 @@ struct NativeProxyProvider: Equatable, Identifiable {
 
 struct NativeProxyProviderGroup: Equatable, Identifiable {
     let name: String
+    let type: String
     let automatic: Bool
+    let includeAllProviders: Bool
     let use: [String]
     let members: [String]
+    let filter: String?
+    let excludeFilter: String?
     var id: String { name }
+}
+
+struct NativeGroupDraft: Equatable {
+    static let supportedTypes = ["select", "url-test", "fallback", "load-balance"]
+    static let defaultTestURL = "https://www.gstatic.com/generate_204"
+
+    var type: String = "select"
+    var members: [String] = []
+    var use: [String] = []
+    var includeAllProviders: Bool = false
+    var filter: String?
+    var excludeFilter: String?
+    var defaultTestURL: String = Self.defaultTestURL
 }
 
 struct NativeProxyProviderDocument: Equatable {
@@ -44,13 +61,14 @@ enum NativeProxyProviderAction {
     case setEnabled(name: String, enabled: Bool)
     case delete(name: String)
     case group(name: String, members: [String]?)
+    case configureGroup(name: String, draft: NativeGroupDraft, create: Bool)
 }
 
 enum NativeProxyProviderError: Error, Equatable {
     case invalidConfig, invalidName, invalidURL, invalidInterval, conflict, unavailable, sourceFailed, reloadFailed
     case emptyGroups([String])
     case groupCycle, groupReferences([String])
-    case invalidOptions, retryFailed(String)
+    case invalidOptions, invalidRegex, retryFailed(String)
 }
 
 struct NativeProxyProviderEdit {
@@ -99,8 +117,15 @@ struct NativeProxyProviderService {
         let entries = (active + inactive.filter { candidate in !active.contains(where: { $0.name == candidate.name }) }).sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         let groups = try parsed.groups.map { group in
             guard let name = group["name"]?.string else { throw NativeProxyProviderError.invalidConfig }
-            return NativeProxyProviderGroup(name: name, automatic: automatic(group),
-                                            use: try strings(lookup(parsed.layouts, name) ?? group["use"]), members: try strings(group["proxies"]))
+            return NativeProxyProviderGroup(
+                name: name,
+                type: group["type"]?.string?.trimmedNonEmpty ?? "select",
+                automatic: automatic(group),
+                includeAllProviders: flag(group["include-all"]) || flag(group["include-all-providers"]),
+                use: try strings(lookup(parsed.layouts, name) ?? group["use"]),
+                members: try strings(group["proxies"]),
+                filter: group["filter"]?.string?.trimmedNonEmpty,
+                excludeFilter: group["exclude-filter"]?.string?.trimmedNonEmpty)
         }
         return NativeProxyProviderDocument(configURL: configURL, data: data, entries: entries, groups: groups,
             staticNodes: parsed.root["proxies"]?.array().compactMap { $0["name"]?.string } ?? [])
@@ -148,6 +173,8 @@ struct NativeProxyProviderService {
         switch action {
         case let .group(groupName, members):
             return try prepareGroup(groupName, members: members, document: document, original: original)
+        case let .configureGroup(groupName, draft, create):
+            return try prepareConfigureGroup(groupName, draft: draft, create: create, document: document, original: original)
         case let .add(rawName, url, interval, healthURL, bindings, options):
             name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
             try validateProviderName(name)
@@ -474,6 +501,138 @@ struct NativeProxyProviderService {
             probeProvider: nil, freshSource: false, changesRuntime: data != document.data)
     }
 
+    private func prepareConfigureGroup(_ rawName: String, draft: NativeGroupDraft, create: Bool,
+                                       document: NativeProxyProviderDocument, original: Parsed) throws -> NativeProxyProviderEdit {
+        var candidate = original
+        var groups = original.groups
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existingIndex = groups.firstIndex(where: { $0["name"]?.string == name })
+        if create {
+            let reserved = ["default", "GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "COMPATIBLE", "PASS", "PASS-RULE"]
+            guard !name.isEmpty, !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  !reserved.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }),
+                  existingIndex == nil,
+                  lookup(original.definitions, name) == nil,
+                  lookup(original.suspended, name) == nil,
+                  !document.staticNodes.contains(name) else {
+                throw NativeProxyProviderError.invalidName
+            }
+        } else if existingIndex == nil {
+            throw NativeProxyProviderError.conflict
+        }
+
+        let existingType = existingIndex.flatMap { groups[$0]["type"]?.string?.trimmedNonEmpty }
+        let normalizedType = draft.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard NativeGroupDraft.supportedTypes.contains(normalizedType)
+            || existingType?.lowercased() == normalizedType else {
+            throw NativeProxyProviderError.invalidOptions
+        }
+
+        let normalizedFilter = draft.filter?.trimmedNonEmpty
+        let normalizedExclude = draft.excludeFilter?.trimmedNonEmpty
+        for pattern in [normalizedFilter, normalizedExclude].compactMap({ $0 }) {
+            do { _ = try NSRegularExpression(pattern: pattern) }
+            catch { throw NativeProxyProviderError.invalidRegex }
+        }
+
+        let oldMembers = try existingIndex.map { try strings(groups[$0]["proxies"]) } ?? []
+        let memberChoices = Set(document.memberChoices + oldMembers)
+        guard Set(draft.members).count == draft.members.count,
+              !draft.members.contains(name),
+              draft.members.allSatisfy(memberChoices.contains) else {
+            throw NativeProxyProviderError.conflict
+        }
+        let knownProviders = Set(document.entries.map(\.name))
+        guard Set(draft.use).count == draft.use.count,
+              draft.use.allSatisfy(knownProviders.contains) else {
+            throw NativeProxyProviderError.conflict
+        }
+
+        var dependencies = Dictionary(uniqueKeysWithValues: document.groups.map { ($0.name, $0.members) })
+        dependencies[name] = draft.members
+        var seen = Set<String>()
+        var pending = draft.members
+        while let target = pending.popLast() {
+            guard target != name else { throw NativeProxyProviderError.groupCycle }
+            if seen.insert(target).inserted { pending += dependencies[target] ?? [] }
+        }
+
+        let liveUse = draft.use.filter { lookup(candidate.suspended, $0) == nil }
+        let hasEffectiveProviders = draft.includeAllProviders ? !document.activeNames.isEmpty : !liveUse.isEmpty
+        let hasEffectiveStatic = existingIndex.map { automaticNodes(groups[$0]) && !flag(groups[$0]["include-all"]) } ?? false
+        guard !draft.members.isEmpty || hasEffectiveProviders || (hasEffectiveStatic && !document.staticNodes.isEmpty) else {
+            throw NativeProxyProviderError.emptyGroups([name])
+        }
+
+        let needsProbeURL = ["url-test", "fallback", "load-balance"].contains(normalizedType)
+        if create {
+            var group: Node = ["name": scalar(name), "type": scalar(normalizedType)]
+            if !draft.members.isEmpty { group["proxies"] = sequence(draft.members) }
+            if draft.includeAllProviders { group["include-all-providers"] = Node("true", Tag(.bool)) }
+            if !draft.use.isEmpty {
+                replaceReferences(draft.use, in: &group, groupName: name, candidate: &candidate)
+                if liveUse.isEmpty { remove("use", from: &group) }
+            }
+            if let normalizedFilter { group["filter"] = scalar(normalizedFilter) }
+            if let normalizedExclude { group["exclude-filter"] = scalar(normalizedExclude) }
+            if needsProbeURL {
+                group["url"] = try httpURL(draft.defaultTestURL)
+                group["interval"] = Node("300", Tag(.int))
+            }
+            groups.append(group)
+        } else if let index = existingIndex {
+            var group = groups[index]
+            group["type"] = scalar(normalizedType)
+            if draft.members.isEmpty { remove("proxies", from: &group) }
+            else { group["proxies"] = sequence(draft.members) }
+            remove(name, from: &candidate.temporaryProxies)
+
+            if draft.includeAllProviders {
+                if !flag(group["include-all"]) {
+                    group["include-all-providers"] = Node("true", Tag(.bool))
+                }
+            } else {
+                remove("include-all-providers", from: &group)
+                if flag(group["include-all"]) {
+                    remove("include-all", from: &group)
+                }
+            }
+
+            if draft.use.isEmpty {
+                remove("use", from: &group)
+                remove(name, from: &candidate.layouts)
+            } else {
+                replaceReferences(draft.use, in: &group, groupName: name, candidate: &candidate)
+                if liveUse.isEmpty { remove("use", from: &group) }
+            }
+
+            if let normalizedFilter { group["filter"] = scalar(normalizedFilter) }
+            else { remove("filter", from: &group) }
+            if let normalizedExclude { group["exclude-filter"] = scalar(normalizedExclude) }
+            else { remove("exclude-filter", from: &group) }
+
+            if needsProbeURL {
+                if group["url"]?.string?.trimmedNonEmpty == nil {
+                    group["url"] = try httpURL(draft.defaultTestURL)
+                }
+                if group["interval"] == nil {
+                    group["interval"] = Node("300", Tag(.int))
+                }
+            }
+            groups[index] = group
+        }
+
+        candidate.root[Self.groupsKey] = Node(groups, .implicit, .block)
+        let changed = groups != original.groups || candidate.layouts != original.layouts || candidate.temporaryProxies != original.temporaryProxies
+        let data = changed ? try render(original: original, candidate: candidate, provider: "") : document.data
+        return NativeProxyProviderEdit(
+            file: NativeRuleEdit(configURL: document.configURL, originalConfig: document.data,
+                                 targetURL: document.configURL.resolvingSymlinksInPath(),
+                                 originalData: document.data, updatedData: data, provider: nil),
+            document: try read(configURL: document.configURL, data: data),
+            affectedGroups: [name], probeProvider: nil, freshSource: false, changesRuntime: data != document.data)
+    }
+
     private func entry(_ name: String, _ node: Node, enabled: Bool) throws -> NativeProxyProvider {
         guard node.mapping != nil, let type = node["type"]?.string else { throw NativeProxyProviderError.invalidConfig }
         let interval = node["interval"]?.int ?? node["interval"]?.string.flatMap(Int.init)
@@ -592,8 +751,10 @@ struct NativeProxyProviderService {
                           body.indices.contains(first.line - 1), first.column >= 3 else { canPatch = false; break }
                     let indentation = String(repeating: " ", count: first.column - 3)
                     guard body[first.line - 1].hasPrefix(indentation + "- ") else { canPatch = false; break }
-                    // Patch individual use/fallback fields when they occupy separate block lines.
-                    let affected = ["use", "proxies", "empty-fallback"].filter { original.groups[index][$0] != changed[$0] }
+                    // Patch individual group fields when they occupy separate block lines.
+                    let affected = ["type", "use", "proxies", "empty-fallback", "include-all", "include-all-providers",
+                                    "filter", "exclude-filter", "url", "interval"]
+                        .filter { original.groups[index][$0] != changed[$0] }
                     let end = trimmedEnd(body, start: first.line - 1, end: next)
                     var updatedFields: [(Range<Int>, [String])] = []
                     var additions: [(String, Node)] = []
@@ -629,9 +790,19 @@ struct NativeProxyProviderService {
                     let next = removed + 1 < raw.count ? (raw[removed + 1].mark?.line ?? line) - 1 : range.upperBound
                     if next > line - 1 { mutations.append((line - 1..<trimmedEnd(body, start: line - 1, end: next), [])) }
                     else { canPatch = false }
+                } else if raw.count + 1 == candidate.groups.count, section.value.sequence?.style != .flow,
+                          let last = raw.last, let mark = last.mark, mark.column >= 3,
+                          let added = candidate.groups.last {
+                    let indent = String(repeating: " ", count: mark.column - 3)
+                    mutations.append((range.upperBound..<range.upperBound,
+                                      try emitted(Node([added], .implicit, .block)).map { indent + $0 }))
                 } else {
                     mutations.append((range, try emitted(mapping([(Self.groupsKey, replacement)]))))
                 }
+            } else if root[Self.groupsKey] == nil && original.root[Self.groupsKey] == nil,
+                      let first = root.mapping?.first?.key.mark, first.column == 1,
+                      let replacement = candidate.root[Self.groupsKey] {
+                mutations.append(((first.line - 1)..<(first.line - 1), try emitted(mapping([(Self.groupsKey, replacement)]))))
             } else { canPatch = false }
         }
         if canPatch {

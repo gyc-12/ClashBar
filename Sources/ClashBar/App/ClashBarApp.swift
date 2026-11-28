@@ -94,7 +94,7 @@ private struct AppCommands: Commands {
             Divider()
 
             Button(self.tr("ui.quick.copy_terminal")) { self.session.copyLocalProxyCommand() }
-                .keyboardShortcut("c", modifiers: .command)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
 
             Button(self.tr("ui.quick.copy_terminal_current_endpoint")) {
                 self.session.copyManagedEndpointProxyCommand()
