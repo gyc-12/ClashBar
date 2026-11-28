@@ -193,8 +193,6 @@ private struct RemoteMachineRowView: View {
     let dismiss: DismissAction
 
     @State private var isHoveringRow = false
-    @State private var isHoveringEdit = false
-    @State private var isHoveringDelete = false
 
     var body: some View {
         let status = self.store.statusFor(self.machine.id)
@@ -241,25 +239,26 @@ private struct RemoteMachineRowView: View {
                         .foregroundStyle(self.nativePositive.opacity(T.Opacity.solid))
                 }
 
-                self.rowActionButton(
+                self.compactIconButton(
                     symbol: "pencil",
-                    accessibilityLabel: self.editAccessibilityLabel,
-                    hovered: self.isHoveringEdit,
-                    destructive: false)
+                    label: self.editAccessibilityLabel,
+                    tint: self.nativeInfo.opacity(T.Opacity.solid),
+                    size: rowActionSize,
+                    fontSize: T.FontSize.callout)
                 {
                     self.onEdit()
                 }
-                .onHover { self.isHoveringEdit = $0 }
 
-                self.rowActionButton(
+                self.compactIconButton(
                     symbol: "trash",
-                    accessibilityLabel: self.deleteAccessibilityLabel,
-                    hovered: self.isHoveringDelete,
-                    destructive: true)
+                    label: self.deleteAccessibilityLabel,
+                    tint: self.nativeCritical.opacity(T.Opacity.solid),
+                    role: .destructive,
+                    size: rowActionSize,
+                    fontSize: T.FontSize.callout)
                 {
                     self.store.removeMachine(id: self.machine.id)
                 }
-                .onHover { self.isHoveringDelete = $0 }
             }
         }
         .padding(rowPadding)
@@ -272,27 +271,6 @@ private struct RemoteMachineRowView: View {
                 self.isHoveringRow = hovering
             }
         }
-    }
-
-    private func rowActionButton(
-        symbol: String,
-        accessibilityLabel: String,
-        hovered: Bool,
-        destructive: Bool,
-        action: @escaping () -> Void) -> some View
-    {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .frame(
-                    width: rowActionSize,
-                    height: rowActionSize)
-                .background(
-                    self.nativeActionBackground(hovered: hovered, destructive: destructive),
-                    in: .rect(cornerRadius: T.cornerRadius))
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(self.nativeActionForeground(hovered: hovered, destructive: destructive))
-        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder

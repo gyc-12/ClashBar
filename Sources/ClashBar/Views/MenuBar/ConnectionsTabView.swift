@@ -118,7 +118,13 @@ struct ConnectionsTabView: TranslatingView {
 
                 let hasFilter = !self.viewModel.filterText.trimmed.isEmpty || self.viewModel.transportFilter != .all
                 let filteredIDs = self.viewModel.visibleConnections.map(\.id)
-                Menu {
+                self.compactIconMenu(
+                    symbol: "ellipsis.circle",
+                    label: self.tr("ui.connections.actions"),
+                    tint: self.nativeInfo.opacity(T.Opacity.solid),
+                    size: T.compactRowHeight,
+                    fontSize: T.FontSize.callout)
+                {
                     if hasFilter, !filteredIDs.isEmpty {
                         Button(self.tr("ui.connections.close_filtered", filteredIDs.count)) {
                             Task { await self.appViewModel.closeConnections(ids: filteredIDs) }
@@ -128,16 +134,7 @@ struct ConnectionsTabView: TranslatingView {
                         self.confirmCloseAll = true
                     }
                     .disabled(self.connectionsStore.connections.isEmpty)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.app(size: T.FontSize.body, weight: .medium))
-                        .foregroundStyle(self.nativeSecondaryLabel)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .accessibilityLabel(self.tr("ui.connections.actions"))
-                .help(self.tr("ui.connections.actions"))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

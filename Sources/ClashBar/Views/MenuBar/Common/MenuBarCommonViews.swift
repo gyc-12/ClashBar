@@ -459,6 +459,55 @@ extension View {
         .background(self.nativeBadgeCapsule())
     }
 
+    func compactIconButton(
+        symbol: String,
+        label: String,
+        tint: Color,
+        baseTint: Color? = nil,
+        role: ButtonRole? = nil,
+        size: CGFloat = 20,
+        fontSize: CGFloat = T.FontSize.body,
+        hierarchicalSymbol: Bool = false,
+        isRevealed: Bool = true,
+        action: @escaping () -> Void) -> some View
+    {
+        CompactAsyncIconButton(
+            symbol: symbol,
+            tint: tint,
+            baseTint: baseTint ?? self.nativeSecondaryLabel,
+            role: role,
+            isLoading: false,
+            size: size,
+            fontSize: fontSize,
+            hierarchicalSymbol: hierarchicalSymbol,
+            isRevealed: isRevealed,
+            syncAction: action)
+            .accessibilityLabel(label)
+            .help(label)
+    }
+
+    func compactIconMenu(
+        symbol: String,
+        label: String,
+        tint: Color? = nil,
+        baseTint: Color? = nil,
+        size: CGFloat = T.compactRowHeight,
+        fontSize: CGFloat = T.FontSize.callout,
+        hierarchicalSymbol: Bool = false,
+        @ViewBuilder content: @escaping () -> some View) -> some View
+    {
+        CompactIconMenu(
+            symbol: symbol,
+            tint: tint ?? self.nativeInfo.opacity(T.Opacity.solid),
+            baseTint: baseTint ?? self.nativeSecondaryLabel,
+            size: size,
+            fontSize: fontSize,
+            hierarchicalSymbol: hierarchicalSymbol,
+            menuContent: content)
+            .accessibilityLabel(label)
+            .help(label)
+    }
+
     func compactAsyncIconButton(
         symbol: String,
         label: String,
@@ -580,6 +629,11 @@ extension View {
 }
 
 struct CompactAsyncIconButton: View {
+    private enum Action {
+        case sync(() -> Void)
+        case async(() async -> Void)
+    }
+
     let symbol: String
     let tint: Color
     let baseTint: Color
@@ -589,20 +643,76 @@ struct CompactAsyncIconButton: View {
     let fontSize: CGFloat
     let hierarchicalSymbol: Bool
     var isRevealed = true
-    let action: () async -> Void
+    private let action: Action
 
     @State private var hovered = false
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(
+        symbol: String,
+        tint: Color,
+        baseTint: Color,
+        role: ButtonRole?,
+        isLoading: Bool,
+        size: CGFloat,
+        fontSize: CGFloat,
+        hierarchicalSymbol: Bool,
+        isRevealed: Bool = true,
+        action: @escaping () async -> Void)
+    {
+        self.symbol = symbol
+        self.tint = tint
+        self.baseTint = baseTint
+        self.role = role
+        self.isLoading = isLoading
+        self.size = size
+        self.fontSize = fontSize
+        self.hierarchicalSymbol = hierarchicalSymbol
+        self.isRevealed = isRevealed
+        self.action = .async(action)
+    }
+
+    init(
+        symbol: String,
+        tint: Color,
+        baseTint: Color,
+        role: ButtonRole?,
+        isLoading: Bool,
+        size: CGFloat,
+        fontSize: CGFloat,
+        hierarchicalSymbol: Bool,
+        isRevealed: Bool = true,
+        syncAction: @escaping () -> Void)
+    {
+        self.symbol = symbol
+        self.tint = tint
+        self.baseTint = baseTint
+        self.role = role
+        self.isLoading = isLoading
+        self.size = size
+        self.fontSize = fontSize
+        self.hierarchicalSymbol = hierarchicalSymbol
+        self.isRevealed = isRevealed
+        self.action = .sync(syncAction)
+    }
 
     var body: some View {
+        let highlighted = self.isEnabled && (self.hovered || self.focused)
+
         Button(role: self.role) {
-            Task { await self.action() }
+            switch self.action {
+            case let .sync(handler):
+                handler()
+            case let .async(handler):
+                Task { await handler() }
+            }
         } label: {
             ZStack {
                 Image(systemName: self.symbol)
                     .font(.app(size: self.fontSize, weight: .semibold))
-                    .foregroundStyle(self.hovered ? self.tint : self.baseTint)
+                    .foregroundStyle(highlighted ? self.tint : self.baseTint)
                     .symbolRenderingMode(self.hierarchicalSymbol ? .hierarchical : .monochrome)
                     .opacity(self.isLoading ? 0 : 1)
 
@@ -611,7 +721,7 @@ struct CompactAsyncIconButton: View {
                     .opacity(self.isLoading ? 1 : 0)
             }
             .frame(width: self.size, height: self.size)
-            .background((self.hovered || self.focused) ? self.tint.opacity(0.10) : .clear,
+            .background(highlighted ? self.tint.opacity(0.12) : .clear,
                         in: RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
         }
@@ -619,7 +729,51 @@ struct CompactAsyncIconButton: View {
         .disabled(self.isLoading)
         .focused(self.$focused)
         .onHover { self.hovered = $0 }
-        .opacity(self.isRevealed || self.hovered || self.focused || self.isLoading ? 1 : 0)
-        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.12), value: self.isRevealed || self.hovered || self.focused)
+        .opacity(self.isRevealed || highlighted || self.isLoading ? 1 : 0)
+        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.12), value: self.isRevealed || highlighted)
+    }
+}
+
+struct CompactIconMenu<MenuContent: View>: View {
+    let symbol: String
+    let tint: Color
+    let baseTint: Color
+    let size: CGFloat
+    let fontSize: CGFloat
+    let hierarchicalSymbol: Bool
+    @ViewBuilder let menuContent: () -> MenuContent
+
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        let highlighted = self.isEnabled && self.hovered
+
+        ZStack {
+            Image(systemName: self.symbol)
+                .font(.app(size: self.fontSize, weight: .semibold))
+                .foregroundStyle(highlighted ? self.tint : self.baseTint)
+                .symbolRenderingMode(self.hierarchicalSymbol ? .hierarchical : .monochrome)
+                .frame(width: self.size, height: self.size)
+                .background(highlighted ? self.tint.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            Menu {
+                self.menuContent()
+            } label: {
+                Text(" ")
+                    .frame(width: self.size, height: self.size)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: self.size, height: self.size)
+        }
+        .frame(width: self.size, height: self.size)
+        .contentShape(RoundedRectangle(cornerRadius: T.cornerRadius, style: .continuous))
+        .onHover { self.hovered = $0 }
+        .animation(self.reduceMotion ? nil : .easeOut(duration: 0.12), value: highlighted)
     }
 }

@@ -120,6 +120,7 @@ struct ProxyGroupDetailView: TranslatingView {
                     Image(systemName: node == group.now ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(node == group.now ? self.nativeAccent : self.nativeSecondaryLabel)
                         .frame(width: 22, height: 30)
+                        .contentShape(RoundedRectangle(cornerRadius: MenuBarLayoutTokens.cornerRadius, style: .continuous))
                 }
                 .buttonStyle(.plain).disabled(self.switching || !self.isSelectable(group))
                 .help(self.tr("ui.diagnostics.select_node"))

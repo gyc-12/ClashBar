@@ -399,10 +399,17 @@ struct RulesTabView: TranslatingView {
             .frame(maxWidth: .infinity, alignment: .trailing)
             .help(self.ruleStatisticsHelp(rule, providerCount: stats.hasProvider ? stats.count : nil))
             if let entry = rule.nativeEntry {
-                Button { self.appViewModel.openNativeRuleEditor(entry) } label: {
-                    Image(systemName: "pencil").font(.system(size: 11)).frame(width: 22, height: 24)
-                }.buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help(self.tr("ui.native_rule.edit")).disabled(!self.appViewModel.canEditQuickRules)
+                self.compactIconButton(
+                    symbol: "pencil",
+                    label: self.tr("ui.native_rule.edit"),
+                    tint: self.nativeInfo.opacity(T.Opacity.solid),
+                    size: T.compactRowHeight,
+                    fontSize: T.FontSize.callout)
+                {
+                    self.appViewModel.openNativeRuleEditor(entry)
+                }
+                .padding(.leading, T.space2)
+                .disabled(!self.appViewModel.canEditQuickRules)
             }
         }
         .padding(.horizontal, T.space4)

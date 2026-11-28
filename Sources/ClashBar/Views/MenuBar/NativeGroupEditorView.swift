@@ -139,20 +139,37 @@ struct NativeGroupEditorView: TranslatingView {
                             Text(verbatim: member).lineLimit(1).truncationMode(.middle)
                             Spacer()
                             if members.count > 1 {
-                                Button {
+                                self.compactIconButton(
+                                    symbol: "chevron.up",
+                                    label: tr("ui.groups.move_up", member),
+                                    tint: self.nativeInfo.opacity(MenuBarLayoutTokens.Opacity.solid),
+                                    size: 22,
+                                    fontSize: MenuBarLayoutTokens.FontSize.subheadline)
+                                {
                                     members.swapAt(index, index - 1)
-                                } label: { Image(systemName: "chevron.up") }
-                                .buttonStyle(.borderless).disabled(index == 0)
-                                .accessibilityLabel(tr("ui.groups.move_up", member))
-                                Button {
+                                }
+                                .disabled(index == 0)
+                                self.compactIconButton(
+                                    symbol: "chevron.down",
+                                    label: tr("ui.groups.move_down", member),
+                                    tint: self.nativeInfo.opacity(MenuBarLayoutTokens.Opacity.solid),
+                                    size: 22,
+                                    fontSize: MenuBarLayoutTokens.FontSize.subheadline)
+                                {
                                     members.swapAt(index, index + 1)
-                                } label: { Image(systemName: "chevron.down") }
-                                .buttonStyle(.borderless).disabled(index == members.count - 1)
-                                .accessibilityLabel(tr("ui.groups.move_down", member))
+                                }
+                                .disabled(index == members.count - 1)
                             }
-                            Button { members.removeAll { $0 == member } } label: { Image(systemName: "minus.circle") }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel(tr("ui.groups.remove", member))
+                            self.compactIconButton(
+                                symbol: "minus.circle",
+                                label: tr("ui.groups.remove", member),
+                                tint: self.nativeCritical.opacity(MenuBarLayoutTokens.Opacity.solid),
+                                role: .destructive,
+                                size: 22,
+                                fontSize: MenuBarLayoutTokens.FontSize.callout)
+                            {
+                                members.removeAll { $0 == member }
+                            }
                         }
                     }
                     Menu(tr("ui.groups.add_member")) {

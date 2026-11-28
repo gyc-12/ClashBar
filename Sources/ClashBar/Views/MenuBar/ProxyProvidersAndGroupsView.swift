@@ -17,33 +17,32 @@ extension ProxyTabView {
                 symbol: "externaldrive.fill",
                 count: "\(providers.count)")
             {
-                if appViewModel.canManageProxyProviders {
-                    Button {
-                        appViewModel.openProxyProviderEditor(.add)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.app(size: T.FontSize.body, weight: .semibold))
-                            .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
+                HStack(spacing: T.space2) {
+                    if appViewModel.canManageProxyProviders {
+                        self.compactIconButton(
+                            symbol: "plus",
+                            label: tr("ui.proxy_provider.add"),
+                            tint: nativeInfo.opacity(T.Opacity.solid),
+                            size: T.compactRowHeight,
+                            fontSize: T.FontSize.callout)
+                        {
+                            appViewModel.openProxyProviderEditor(.add)
+                        }
+                        .disabled(!appViewModel.canStartProxyProviderEdit)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!appViewModel.canStartProxyProviderEdit)
-                    .help(tr("ui.proxy_provider.add"))
-                    .accessibilityLabel(tr("ui.proxy_provider.add"))
-                }
-                let label = tr(isProxyProvidersCollapsed ? "ui.action.expand" : "ui.action.collapse")
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        isProxyProvidersCollapsed.toggle()
+                    let label = tr(isProxyProvidersCollapsed ? "ui.action.expand" : "ui.action.collapse")
+                    self.compactIconButton(
+                        symbol: isProxyProvidersCollapsed ? "chevron.right" : "chevron.down",
+                        label: label,
+                        tint: nativePrimaryLabel,
+                        size: T.compactRowHeight,
+                        fontSize: T.FontSize.caption)
+                    {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            isProxyProvidersCollapsed.toggle()
+                        }
                     }
-                } label: {
-                    Image(systemName: isProxyProvidersCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.app(size: T.FontSize.caption, weight: .semibold))
-                        .foregroundStyle(nativeSecondaryLabel)
-                        .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(label)
-                .help(label)
             }
 
             if let message = appViewModel.nativeProxyProviderError ?? appViewModel.nativeProxyProviderNotice {
@@ -123,51 +122,41 @@ extension ProxyTabView {
                 }
                 .frame(maxWidth: .infinity)
 
-                if detail != nil {
-                    Button {
-                        Task { await appViewModel.updateProxyProvider(name: name) }
-                    } label: {
-                        ZStack {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.app(size: T.FontSize.caption, weight: .semibold))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(nativeSecondaryLabel)
-                                .opacity(isUpdating ? 0 : 1)
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .opacity(isUpdating ? 1 : 0)
+                HStack(spacing: T.space2) {
+                    if detail != nil {
+                        self.providerActionButton(.refresh, isLoading: isUpdating, size: 22) {
+                            await appViewModel.updateProxyProvider(name: name)
                         }
-                        .frame(width: T.rowLeadingIcon, height: T.rowLeadingIcon)
+                        .disabled(appViewModel.isQuickRuleSaving || isUpdating)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tr("ui.action.refresh"))
-                    .disabled(appViewModel.isQuickRuleSaving || isUpdating)
-                }
-                if let entry {
-                    let toggleLabel = tr(entry.enabled ? "ui.proxy_provider.disable" : "ui.proxy_provider.enable")
-                    Button {
-                        appViewModel.openProxyProviderEditor(entry.enabled ? .disable : .enable, name: name)
-                    } label: {
-                        Image(systemName: entry.enabled ? "pause.circle" : "play.circle")
-                            .foregroundStyle(entry.enabled ? nativeSecondaryLabel : nativeTeal)
-                    }
-                    .buttonStyle(.borderless)
-                    .help(toggleLabel)
-                    .accessibilityLabel(toggleLabel)
-                    .disabled(!appViewModel.canStartProxyProviderEdit)
-                    Menu {
-                        Button(tr("ui.proxy_provider.edit")) { appViewModel.openProxyProviderEditor(.edit, name: name) }
-                        Button(tr("ui.proxy_provider.delete"), role: .destructive) {
-                            appViewModel.openProxyProviderEditor(.delete, name: name)
+                    if let entry {
+                        let toggleLabel = tr(entry.enabled ? "ui.proxy_provider.disable" : "ui.proxy_provider.enable")
+                        self.compactIconButton(
+                            symbol: entry.enabled ? "pause.circle" : "play.circle",
+                            label: toggleLabel,
+                            tint: (entry.enabled ? nativeWarning : nativeTeal).opacity(T.Opacity.solid),
+                            baseTint: entry.enabled ? nativeSecondaryLabel : nativeTeal,
+                            size: 22,
+                            fontSize: T.FontSize.callout)
+                        {
+                            appViewModel.openProxyProviderEditor(entry.enabled ? .disable : .enable, name: name)
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                        .disabled(!appViewModel.canStartProxyProviderEdit)
+
+                        self.compactIconMenu(
+                            symbol: "ellipsis.circle",
+                            label: tr("ui.proxy_provider.manage"),
+                            tint: nativeInfo.opacity(T.Opacity.solid),
+                            size: 22,
+                            fontSize: T.FontSize.callout)
+                        {
+                            Button(tr("ui.proxy_provider.edit")) { appViewModel.openProxyProviderEditor(.edit, name: name) }
+                            Button(tr("ui.proxy_provider.delete"), role: .destructive) {
+                                appViewModel.openProxyProviderEditor(.delete, name: name)
+                            }
+                        }
+                        .disabled(!appViewModel.canStartProxyProviderEdit)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .accessibilityLabel(tr("ui.proxy_provider.manage"))
-                    .disabled(!appViewModel.canStartProxyProviderEdit)
                 }
             }
 
@@ -239,6 +228,7 @@ extension ProxyTabView {
     func providerActionButton(
         _ kind: ProviderAction,
         isLoading: Bool = false,
+        size: CGFloat = T.compactRowHeight,
         action: @escaping () async -> Void) -> some View
     {
         let tone = kind == .healthcheck ? nativeTeal : nativeInfo
@@ -247,8 +237,8 @@ extension ProxyTabView {
             label: tr(kind.labelKey),
             tint: tone.opacity(T.Opacity.solid),
             isLoading: isLoading,
-            size: T.rowLeadingIcon,
-            fontSize: T.FontSize.caption,
+            size: size,
+            fontSize: size <= T.rowLeadingIcon ? T.FontSize.caption : T.FontSize.callout,
             hierarchicalSymbol: true,
             action: action)
     }
@@ -262,8 +252,14 @@ extension ProxyTabView {
                 symbol: "point.3.connected.trianglepath.dotted",
                 count: "\(groups.count)")
             {
-                HStack(spacing: T.space6) {
-                    Menu {
+                HStack(spacing: T.space2) {
+                    self.compactIconMenu(
+                        symbol: "ellipsis.circle",
+                        label: tr("ui.groups.options"),
+                        tint: nativeInfo.opacity(T.Opacity.solid),
+                        size: T.compactRowHeight,
+                        fontSize: T.FontSize.callout)
+                    {
                         Button(tr("ui.sites.title")) { appViewModel.showsSiteChecks = true }
                         Toggle(tr("ui.groups.fold"), isOn: $appViewModel.foldTimeoutNodes)
                         if appViewModel.canManageProxyProviders, let document = appViewModel.nativeProxyProviderDocument {
@@ -275,9 +271,7 @@ extension ProxyTabView {
                                 }
                             }.disabled(!appViewModel.canStartProxyProviderEdit || document.groups.isEmpty)
                         }
-                    } label: { Image(systemName: "ellipsis.circle") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .accessibilityLabel(tr("ui.groups.options"))
+                    }
                     self.compactTopIcon(
                         sortGroupNodesByLatency ? "timer" : "list.number",
                         label: tr(
@@ -405,22 +399,33 @@ extension ProxyTabView {
                             .environment(\.proxyGroupIconCache, self.appViewModel.proxyGroupIconCache)
                     }
                 } trailing: {
-                    if appViewModel.canStartProxyProviderEdit && appViewModel.nativeProvidersMatchRunningConfig,
-                       appViewModel.nativeProxyProviderDocument?.groups.contains(where: { $0.name == group.name }) == true {
-                        Button {
+                    HStack(spacing: T.space2) {
+                        if appViewModel.canStartProxyProviderEdit && appViewModel.nativeProvidersMatchRunningConfig,
+                           appViewModel.nativeProxyProviderDocument?.groups.contains(where: { $0.name == group.name }) == true {
+                            self.compactIconButton(
+                                symbol: "pencil",
+                                label: tr("ui.groups.edit"),
+                                tint: nativeInfo.opacity(T.Opacity.solid),
+                                size: T.compactRowHeight,
+                                fontSize: T.FontSize.callout)
+                            {
+                                dismiss()
+                                appViewModel.openGroupEditor(group.name)
+                            }
+                        }
+                        self.compactIconButton(
+                            symbol: "info.circle",
+                            label: tr("ui.diagnostics.group_details"),
+                            tint: nativeInfo.opacity(T.Opacity.solid),
+                            size: T.compactRowHeight,
+                            fontSize: T.FontSize.callout)
+                        {
                             dismiss()
-                            appViewModel.openGroupEditor(group.name)
-                        } label: { Image(systemName: "pencil") }
-                        .buttonStyle(.plain).help(tr("ui.groups.edit")).accessibilityLabel(tr("ui.groups.edit"))
-                    }
-                    Button {
-                        dismiss()
-                        self.appViewModel.proxyGroupDetailName = group.name
-                    } label: { Image(systemName: "info.circle") }
-                        .buttonStyle(.plain).help(tr("ui.diagnostics.group_details"))
-                        .accessibilityLabel(tr("ui.diagnostics.group_details"))
-                    self.providerActionButton(.healthcheck, isLoading: testing) {
-                        await appViewModel.refreshGroupLatency(group)
+                            self.appViewModel.proxyGroupDetailName = group.name
+                        }
+                        self.providerActionButton(.healthcheck, isLoading: testing, size: T.compactRowHeight) {
+                            await appViewModel.refreshGroupLatency(group)
+                        }
                     }
                 }
                 SheetNote(text: tr("ui.diagnostics.popover_note"))
