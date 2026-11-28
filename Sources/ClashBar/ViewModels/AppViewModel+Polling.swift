@@ -287,8 +287,10 @@ extension AppViewModel {
         self.proxyProviderPresentationGeneration &+= 1
         proxyGroups = []
         proxyLatencyHistory = [:]
+        proxyStore.timedOutNodes = []
         connectionDetailContext = nil
         proxyGroupDetailName = nil
+        showsSiteChecks = false
         ruleNavigationIDs = []
         pendingConnectionRuleNavigation = false
         proxyNodeTypes = [:]
@@ -478,6 +480,11 @@ extension AppViewModel {
             let merged = ProxyLatencySample.merge(api: delaySamples[name] ?? [], previous: self.proxyLatencyHistory[name] ?? [])
             if !merged.isEmpty { history[name] = merged }
         }
+        let ambiguous = Dictionary(grouping: providerLookup.values.filter { $0.vehicleType?.lowercased() != "compatible" }
+            .flatMap { ($0.proxies ?? []).map(\.name) }, by: { $0 }).filter { $0.value.count > 1 }.keys
+        self.proxyStore.timedOutNodes = Set(delaySamples.compactMap { name, samples in
+            ProxyLatencySample.hasConsecutiveTimeouts(samples) && history[name]?.last?.delay == 0 ? name : nil
+        }).subtracting(ambiguous)
         self.proxyLatencyHistory = history
         self.proxyNodeTypes = nodeTypes
     }

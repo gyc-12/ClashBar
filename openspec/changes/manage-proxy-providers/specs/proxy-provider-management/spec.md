@@ -36,6 +36,7 @@ The app SHALL 正确协调 use、include-all、include-all-providers、include-a
 #### Scenario: Missing members
 - **WHEN** 操作导致组缺少有效来源或没有可用成员，且没有用户明确的有效回退选择
 - **THEN** 展示受影响组并阻止无效应用，引导选择备用或回退策略
+- **AND** 若只提供 DIRECT / REJECT，则将它们明确标为直连 / 拒绝连接，而非提示可以选择代理节点
 
 ### Requirement: Consistent panel state
 The app SHALL 区分原生编辑状态和核心运行摘要，保证晚到响应及旧节点缓存不会重新显示已禁用或删除的节点。

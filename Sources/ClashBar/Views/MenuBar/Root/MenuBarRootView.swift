@@ -96,6 +96,12 @@ struct MenuBarRootView: TranslatingView {
         .sheet(item: self.$appViewModel.proxyProviderEditorContext) { context in
             ProxyProviderEditorView(context: context).environmentObject(self.appViewModel)
         }
+        .sheet(item: self.$appViewModel.groupEditorContext) { context in
+            NativeGroupEditorView(context: context).environmentObject(self.appViewModel)
+        }
+        .sheet(isPresented: self.$appViewModel.showsSiteChecks) {
+            SiteReachabilityView().environmentObject(self.appViewModel).environmentObject(self.proxyStore)
+        }
         .sheet(item: self.$appViewModel.nativeRuleEditorContext) { context in
             NativeRuleEditorView(context: context).environmentObject(self.appViewModel)
         }

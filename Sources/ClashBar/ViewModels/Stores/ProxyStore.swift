@@ -17,6 +17,10 @@ final class ProxyStore: ObservableObject {
 
     var proxyDelaySamples: [String: [Int]] { self.proxyLatencyHistory.mapValues { $0.map(\.delay) } }
 
+    var timedOutNodes: Set<String> = [] {
+        willSet { self.publishChangeIfNeeded(current: self.timedOutNodes, next: newValue) }
+    }
+
     var proxyLatencyHistory: [String: [ProxyLatencySample]] = [:] {
         willSet { self.publishChangeIfNeeded(current: self.proxyLatencyHistory, next: newValue) }
     }

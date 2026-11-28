@@ -8,6 +8,35 @@ import Testing
 @MainActor
 struct NativePanelVisualTests {
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CLASHBAR_TEST_RENDER_DIR"] != nil))
+    func renderConfigSwitcherForVisualReview() throws {
+        let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["CLASHBAR_TEST_RENDER_DIR"]))
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let environment = try NativeRuleTestEnvironment()
+        defer { environment.model.cancelPolling(); environment.clean() }
+        let model = environment.model
+        model.controller = "127.0.0.1:1"
+        let local = ["ClashBar.yaml", "default_limit_manual.yaml", "default_limit.yaml"]
+        let remote = "Weekly-travel-subscription-with-a-long-filename.yaml"
+        model.remoteConfigSubscriptions = [remote: RemoteConfigSubscription(urlString: "https://example.invalid/travel")]
+        model.ssidStrategyRules = [SSIDStrategyRule(ssid: "Studio Wi-Fi", configFileName: remote)]
+        for language in AppLanguage.allCases {
+            model.uiLanguage = language
+            for (appearance, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+                for mixed in [false, true] {
+                    model.availableConfigFileNames = mixed ? local + [remote] : local
+                    model.selectedConfigName = mixed ? remote : local[1]
+                    let size = CGSize(width: ConfigSwitcherMenu.width, height: mixed ? 468 : 380)
+                    let surface = AttachedPopoverSurface(width: size.width, maxHeight: size.height) {
+                        ConfigSwitcherMenu(dismiss: {})
+                    }
+                    let filename = "config-switcher-\(mixed ? "mixed" : "local")-\(language.rawValue)-\(appearance).png"
+                    try render(surface, model: model, size: size, scheme: scheme, path: directory.appendingPathComponent(filename))
+                }
+            }
+        }
+    }
+
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["CLASHBAR_TEST_RENDER_DIR"] != nil))
     func renderNativePanelForVisualReview() throws {
         let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["CLASHBAR_TEST_RENDER_DIR"]))
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -50,6 +79,12 @@ struct NativePanelVisualTests {
                                 scheme: scheme, layout: systemLayout, scrollOffset: 420,
                                 path: directory.appendingPathComponent("scrolled-system-\(suffix)"))
                 model.activeMenuTab = .proxy
+                model.defaults.set(true, forKey: "clashbar.proxy.traffic.show_chart")
+                let chartLayout = PopoverLayoutModel(maxPanelHeight: 640, preferredPanelHeight: 640)
+                try self.render(MenuBarRootView(), model: model, size: CGSize(width: MenuBarLayoutTokens.panelWidth, height: 640),
+                                scheme: scheme, layout: chartLayout,
+                                path: directory.appendingPathComponent("panel-proxy-chart-\(suffix)"))
+                model.defaults.set(false, forKey: "clashbar.proxy.traffic.show_chart")
                 model.proxyStore.groupLatencyLoading.insert("OpenAI")
                 let testingLayout = PopoverLayoutModel(maxPanelHeight: 640, preferredPanelHeight: 640)
                 try self.render(MenuBarRootView(), model: model, size: CGSize(width: MenuBarLayoutTokens.panelWidth, height: 640),
@@ -75,6 +110,14 @@ struct NativePanelVisualTests {
                                 size: CGSize(width: MenuBarLayoutTokens.Sheet.wideWidth, height: MenuBarLayoutTokens.Sheet.tallHeight),
                                 scheme: scheme, path: directory.appendingPathComponent("sheet-application-\(suffix)"))
                 let providerDocument = try #require(model.nativeProxyProviderDocument)
+                let editGroup = try #require(providerDocument.groups.first)
+                let context = GroupEditorContext(document: providerDocument, group: editGroup, willReload: true, isSubscription: true)
+                try self.render(NativeGroupEditorView(context: context), model: model,
+                                size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.height),
+                                scheme: scheme, path: directory.appendingPathComponent("sheet-group-editor-\(suffix)"))
+                try self.render(SiteReachabilityView(), model: model,
+                                size: CGSize(width: MenuBarLayoutTokens.Sheet.width, height: MenuBarLayoutTokens.Sheet.height),
+                                scheme: scheme, path: directory.appendingPathComponent("sheet-site-checks-\(suffix)"))
                 for operation in [ProxyProviderEditorContext.Operation.add, .edit, .enable, .disable, .delete] {
                     let entry = operation == .add ? nil : providerDocument.entries.first { $0.enabled == (operation != .enable) }
                     let context = ProxyProviderEditorContext(document: providerDocument, operation: operation, entry: entry,

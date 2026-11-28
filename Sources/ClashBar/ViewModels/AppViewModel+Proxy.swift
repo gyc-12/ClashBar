@@ -133,7 +133,7 @@ extension AppViewModel {
         }
     }
 
-    func refreshGroupLatency(_ group: ProxyGroup) async {
+    func refreshGroupLatency(_ group: ProxyGroup, syncHistory: Bool = true) async {
         guard !self.isQuickRuleSaving, !self.groupLatencyLoading.contains(group.name) else { return }
         let generation = self.proxyProviderPresentationGeneration
         groupLatencyLoading.insert(group.name)
@@ -141,12 +141,20 @@ extension AppViewModel {
 
         let testURL = self.healthcheckSettings(for: group).url ?? defaultHealthcheckURL
         let timeout = group.timeout.flatMap { $0 > 0 ? $0 : nil } ?? defaultHealthcheckTimeoutMilliseconds
+        var measured = false
         await runRefresh {
-            let response: GroupDelayMeasurement = try await self.clientOrThrow().request(
-                .groupDelay(name: group.name, url: testURL, timeout: timeout))
+            let response: GroupDelayMeasurement
+            do {
+                response = try await self.clientOrThrow().request(.groupDelay(name: group.name, url: testURL, timeout: timeout))
+            } catch APIError.statusCode(let status, _) where status == 504 || status == 503 {
+                measured = true
+                return
+            }
             guard generation == self.proxyProviderPresentationGeneration else { return }
+            measured = true
             self.applyMeasuredNodeDelays(response.values, testURL: testURL)
         }
+        if syncHistory, measured, generation == self.proxyProviderPresentationGeneration { await refreshProxyGroups() }
     }
 
     func refreshAllGroupLatencies(includeHiddenGroups: Bool = false) async {
@@ -156,13 +164,15 @@ extension AppViewModel {
         let groups = includeHiddenGroups
             ? modeScopedGroups
             : modeScopedGroups.filter { $0.hidden != true }
+        let generation = self.proxyProviderPresentationGeneration
         await withTaskGroup(of: Void.self) { taskGroup in
             for group in groups {
                 taskGroup.addTask { [weak self] in
-                    await self?.refreshGroupLatency(group)
+                    await self?.refreshGroupLatency(group, syncHistory: false)
                 }
             }
         }
+        if !groups.isEmpty, generation == self.proxyProviderPresentationGeneration { await refreshProxyGroups() }
     }
 
     func isProxyLatencyTesting(group: String, node: String) -> Bool {
@@ -181,12 +191,20 @@ extension AppViewModel {
         let testURL = proxyGroup.flatMap { self.healthcheckSettings(for: $0).url } ?? defaultHealthcheckURL
         let timeout = proxyGroup?.timeout.flatMap { $0 > 0 ? $0 : nil } ?? defaultHealthcheckTimeoutMilliseconds
 
+        var needsCoreHistory = false
         await runRefresh {
-            let response: DelayMeasurement = try await self.clientOrThrow().request(
-                .proxyDelay(name: node, url: testURL, timeout: timeout))
+            let response: DelayMeasurement
+            do {
+                response = try await self.clientOrThrow().request(.proxyDelay(name: node, url: testURL, timeout: timeout))
+            } catch APIError.statusCode(let status, _) where status == 504 || status == 503 {
+                needsCoreHistory = true
+                return
+            }
             guard generation == self.proxyProviderPresentationGeneration, let value = response.value else { return }
+            needsCoreHistory = value == 0
             self.applyMeasuredNodeDelays([node: value], testURL: testURL)
         }
+        if needsCoreHistory, generation == self.proxyProviderPresentationGeneration { await refreshProxyGroups() }
     }
 
     func applyMeasuredNodeDelays(_ delays: [String: Int], testURL: String, measuredAt: Date = Date()) {
@@ -194,10 +212,16 @@ extension AppViewModel {
 
         var samples = self.proxyLatencyHistory
         for (name, delay) in delays {
+            if delay > 0 { self.proxyStore.timedOutNodes.remove(name) }
             samples[name] = ProxyLatencySample.merge(
                 api: [ProxyLatencySample(delay: delay, time: measuredAt, testURL: testURL)], previous: samples[name] ?? [])
         }
         self.proxyLatencyHistory = samples
+    }
+
+    func foldedNodes(in group: ProxyGroup) -> Set<String> {
+        guard foldTimeoutNodes else { return [] }
+        return proxyStore.timedOutNodes.intersection(group.all).subtracting(proxyGroups.map(\.name)).subtracting([group.now].compactMap { $0 })
     }
 
     func delayText(group: String, node: String, fallbackToGroupHistory: Bool = false) -> String {
@@ -236,7 +260,7 @@ extension AppViewModel {
         return []
     }
 
-    private func proxySelectionChain(startingAt start: String) -> [String] {
+    func proxySelectionChain(startingAt start: String) -> [String] {
         var chain: [String] = []
         var current = start
         var seen = Set<String>()

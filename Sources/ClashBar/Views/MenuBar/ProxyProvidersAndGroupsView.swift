@@ -148,17 +148,15 @@ extension ProxyTabView {
                     Button {
                         appViewModel.openProxyProviderEditor(entry.enabled ? .disable : .enable, name: name)
                     } label: {
-                        Image(systemName: entry.enabled ? "switch.2" : "power")
-                            .foregroundStyle(entry.enabled ? nativeTeal : nativeTertiaryLabel)
+                        Image(systemName: entry.enabled ? "pause.circle" : "play.circle")
+                            .foregroundStyle(entry.enabled ? nativeSecondaryLabel : nativeTeal)
                     }
                     .buttonStyle(.borderless)
                     .help(toggleLabel)
                     .accessibilityLabel(toggleLabel)
                     .disabled(!appViewModel.canStartProxyProviderEdit)
                     Menu {
-                        if entry.type == "http" {
-                            Button(tr("ui.proxy_provider.edit")) { appViewModel.openProxyProviderEditor(.edit, name: name) }
-                        }
+                        Button(tr("ui.proxy_provider.edit")) { appViewModel.openProxyProviderEditor(.edit, name: name) }
                         Button(tr("ui.proxy_provider.delete"), role: .destructive) {
                             appViewModel.openProxyProviderEditor(.delete, name: name)
                         }
@@ -265,6 +263,19 @@ extension ProxyTabView {
                 count: "\(groups.count)")
             {
                 HStack(spacing: T.space6) {
+                    Menu {
+                        Button(tr("ui.sites.title")) { appViewModel.showsSiteChecks = true }
+                        Toggle(tr("ui.groups.fold"), isOn: $appViewModel.foldTimeoutNodes)
+                        if appViewModel.canManageProxyProviders, let document = appViewModel.nativeProxyProviderDocument {
+                            Menu(tr("ui.groups.edit")) {
+                                ForEach(document.groups) { group in
+                                    Button(group.name) { appViewModel.openGroupEditor(group.name) }
+                                }
+                            }.disabled(!appViewModel.canStartProxyProviderEdit || document.groups.isEmpty)
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel(tr("ui.groups.options"))
                     self.compactTopIcon(
                         sortGroupNodesByLatency ? "timer" : "list.number",
                         label: tr(
@@ -392,6 +403,14 @@ extension ProxyTabView {
                             .environment(\.proxyGroupIconCache, self.appViewModel.proxyGroupIconCache)
                     }
                 } trailing: {
+                    if appViewModel.canStartProxyProviderEdit && appViewModel.nativeProvidersMatchRunningConfig,
+                       appViewModel.nativeProxyProviderDocument?.groups.contains(where: { $0.name == group.name }) == true {
+                        Button {
+                            dismiss()
+                            appViewModel.openGroupEditor(group.name)
+                        } label: { Image(systemName: "pencil") }
+                        .buttonStyle(.plain).help(tr("ui.groups.edit")).accessibilityLabel(tr("ui.groups.edit"))
+                    }
                     Button {
                         dismiss()
                         self.appViewModel.proxyGroupDetailName = group.name
@@ -405,7 +424,8 @@ extension ProxyTabView {
                 SheetNote(text: tr("ui.diagnostics.popover_note"))
                     .padding(.horizontal, T.space4).padding(.bottom, T.space6)
                 let nodes = sortGroupNodesByLatency ? self.sortedGroupNodes(group) : self.defaultGroupNodes(group)
-                FrozenPopoverNodesList(nodes: nodes, emptyText: tr("ui.common.na")) { node in
+                let folded = appViewModel.foldedNodes(in: group)
+                FoldableNodesList(nodes: nodes, folded: folded, title: tr("ui.groups.timeouts", folded.count), emptyText: tr("ui.common.na")) { node in
                     let samples = appViewModel.delaySamples(group: group.name, node: node)
                     ProxyGroupPopoverNodeItem(title: node, typeText: proxyStore.proxyNodeTypes[node].trimmedNonEmpty,
                                               delayText: appViewModel.delayText(group: group.name, node: node),
@@ -515,9 +535,7 @@ extension ProxyTabView {
     }
 
     func defaultGroupNodes(_ group: ProxyGroup) -> [String] {
-        let unique = self.orderedUniqueNames(group.all)
-        guard appViewModel.hideUnavailableProxyNodes else { return unique }
-        return unique.filter { self.isProxyNodeAvailable(appViewModel.delayValue(group: group.name, node: $0)) }
+        self.orderedUniqueNames(group.all)
     }
 
     private func sortedNodes(names: [String], latencyForNode: (String) -> Int?) -> [String] {
@@ -529,20 +547,24 @@ extension ProxyTabView {
             }
             return lhs.localizedStandardCompare(rhs) == .orderedAscending
         }
-        guard appViewModel.hideUnavailableProxyNodes else { return sorted }
-        return sorted.filter { self.isProxyNodeAvailable(latencyForNode($0)) }
+        return sorted
     }
 }
 
-private struct FrozenPopoverNodesList<Row: View>: View {
+struct FoldableNodesList<Row: View>: View {
     let nodes: [String]
+    let folded: Set<String>
+    let title: String
     let emptyText: String
     let row: (String) -> Row
 
     @State private var frozenNodes: [String]
+    @State private var expanded = false
 
-    init(nodes: [String], emptyText: String, @ViewBuilder row: @escaping (String) -> Row) {
+    init(nodes: [String], folded: Set<String>, title: String, emptyText: String, @ViewBuilder row: @escaping (String) -> Row) {
         self.nodes = nodes
+        self.folded = folded
+        self.title = title
         self.emptyText = emptyText
         self.row = row
         self._frozenNodes = State(initialValue: nodes)
@@ -562,8 +584,13 @@ private struct FrozenPopoverNodesList<Row: View>: View {
                 .padding(.vertical, T.space4)
         } else {
             VStack(spacing: 0) {
-                ForEach(current, id: \.self) { node in
+                ForEach(current.filter { !folded.contains($0) }, id: \.self) { node in
                     self.row(node)
+                }
+                if !folded.isEmpty {
+                    DisclosureGroup(title, isExpanded: $expanded) {
+                        ForEach(current.filter(folded.contains), id: \.self, content: row)
+                    }.padding(.vertical, 4)
                 }
             }
         }

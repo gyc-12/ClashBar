@@ -16,6 +16,14 @@ struct AppliedProviderConfig {
     let status: CoreLifecycleStatus
 }
 
+struct GroupEditorContext: Identifiable {
+    let id = UUID()
+    let document: NativeProxyProviderDocument
+    let group: NativeProxyProviderGroup
+    let willReload: Bool
+    let isSubscription: Bool
+}
+
 @MainActor
 extension AppViewModel {
     var canManageProxyProviders: Bool {
@@ -82,6 +90,14 @@ extension AppViewModel {
             willReload: changesRuntime && self.nativeProvidersMatchRunningConfig)
     }
 
+    func openGroupEditor(_ name: String) {
+        guard canStartProxyProviderEdit else { return }
+        refreshNativeProxyProviderDocument()
+        guard let document = nativeProxyProviderDocument, let group = document.groups.first(where: { $0.name == name }) else { return }
+        groupEditorContext = GroupEditorContext(document: document, group: group, willReload: nativeProvidersMatchRunningConfig,
+            isSubscription: remoteConfigSubscriptions[document.configURL.lastPathComponent] != nil)
+    }
+
     func saveProxyProvider(_ action: NativeProxyProviderAction, document: NativeProxyProviderDocument,
                            fallback: NativeProxyProviderService.Fallback?) async throws -> Bool {
         guard self.canStartProxyProviderEdit, self.isSelectedRoutingConfig(document.configURL) else { throw QuickRuleError.contextChanged }
@@ -102,6 +118,8 @@ extension AppViewModel {
         await refresh?.value
         let service = NativeProxyProviderService()
         let cacheID = UUID()
+        var effectiveAction = action
+        var retryRoute: String?
         var candidate = try service.prepare(action, in: document, fallback: fallback, cacheID: cacheID)
         guard candidate.file.hasChanges else { return self.nativeProvidersMatchRunningConfig }
         try candidate.file.checkUnchanged()
@@ -119,10 +137,27 @@ extension AppViewModel {
         if needsProbe {
             guard let binary = self.processManager.detectedBinaryPath else { throw NativeProxyProviderError.unavailable }
             let probe = ProxyProviderProbe(binary: binary, home: localHome)
-            do { inspected = try await probe.inspect(candidate) }
+            let selectedNodes = activeFile
+                ? Dictionary(uniqueKeysWithValues: self.proxyStore.proxyGroups.compactMap { group in
+                    group.now.map { (group.name, $0) }
+                })
+                : [:]
+            do { inspected = try await probe.inspect(candidate, selectedNodes: selectedNodes) }
             catch is CancellationError { throw CancellationError() }
+            catch SubscriptionProbeError.newSourceFailed {
+                guard let (retry, route) = action.retryRoute(in: document) else { throw NativeProxyProviderError.sourceFailed }
+                try Task.checkCancellation()
+                try candidate.file.checkUnchanged()
+                effectiveAction = retry
+                retryRoute = route
+                candidate = try service.prepare(retry, in: document, fallback: fallback, cacheID: cacheID)
+                do { inspected = try await probe.inspect(candidate, selectedNodes: selectedNodes) }
+                catch is CancellationError { throw CancellationError() }
+                catch { throw NativeProxyProviderError.retryFailed(route) }
+            }
             catch { throw NativeProxyProviderError.sourceFailed }
             var empty = Self.emptyAffectedGroups(candidate, in: inspected?.groups ?? [:])
+            if case .group = action, !empty.isEmpty { throw NativeProxyProviderError.emptyGroups(empty.sorted()) }
             if !empty.isEmpty {
                 // Leave groups already falling back before this edit alone.
                 let before: [String: ProxyGroup]
@@ -139,7 +174,7 @@ extension AppViewModel {
             }
             if !empty.isEmpty {
                 guard let fallback else { throw NativeProxyProviderError.emptyGroups(empty.sorted()) }
-                candidate = try service.prepare(action, in: document, fallback: fallback, filteredEmptyGroups: empty, cacheID: cacheID)
+                candidate = try service.prepare(effectiveAction, in: document, fallback: fallback, filteredEmptyGroups: empty, cacheID: cacheID)
             }
         }
 
@@ -184,6 +219,10 @@ extension AppViewModel {
                     async let groups: ProxyGroupsResponse = client.request(.proxies)
                     let (summary, resolved) = try await (response, groups)
                     let native = self.visibleRuntimeProviders(summary.providers)
+                    if case let .group(name, members) = action {
+                        guard members == nil ? resolved.proxies[name] == nil : resolved.proxies[name]?.all == inspected?.groups[name]?.all
+                        else { throw NativeProxyProviderError.reloadFailed }
+                    }
                     guard self.processManager.status == status, Set(native.keys) == nextNames,
                           native.values.allSatisfy({ $0.proxies?.isEmpty == false }),
                           freshCache.map({ FileManager.default.fileExists(atPath: $0.path) }) ?? true,
@@ -220,6 +259,8 @@ extension AppViewModel {
         }
         if activeFile { self.rememberAppliedProviderConfig(url: document.configURL, data: candidate.file.updatedData) }
         self.nativeProxyProviderNotice = self.tr(activeFile ? "ui.proxy_provider.saved" : "ui.native_rule.saved_file")
+        if case .group = action, activeFile { self.nativeProxyProviderNotice = self.tr("ui.groups.saved") }
+        if let retryRoute { self.nativeProxyProviderNotice = [self.nativeProxyProviderNotice, self.tr("ui.subscription.retried", retryRoute)].compactMap { $0 }.joined(separator: " ") }
         return activeFile
     }
 
@@ -236,6 +277,10 @@ extension AppViewModel {
         }
         switch error {
         case .invalidConfig: return self.tr("ui.proxy_provider.error.config")
+        case .groupCycle: return self.tr("ui.groups.cycle")
+        case .invalidOptions: return self.tr("ui.subscription.invalid_options")
+        case .retryFailed(let route): return self.tr("ui.subscription.retry_failed", route)
+        case .groupReferences(let paths): return self.tr("ui.groups.references", paths.joined(separator: ", "))
         case .invalidName: return self.tr("ui.proxy_provider.error.name")
         case .invalidURL: return self.tr("ui.proxy_provider.error.url")
         case .invalidInterval: return self.tr("ui.proxy_provider.error.interval")

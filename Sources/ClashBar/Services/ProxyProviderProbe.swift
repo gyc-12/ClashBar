@@ -8,12 +8,14 @@ struct ProxyProviderProbeResult: Sendable {
     let groups: [String: ProxyGroup]
 }
 
+enum SubscriptionProbeError: Error { case newSourceFailed }
+
 /// Uses mihomo's actual subscription parser and group filters without opening any proxy listeners.
 struct ProxyProviderProbe {
     let binary: String
     let home: URL
 
-    func inspect(_ edit: NativeProxyProviderEdit) async throws -> ProxyProviderProbeResult {
+    func inspect(_ edit: NativeProxyProviderEdit, selectedNodes: [String: String] = [:]) async throws -> ProxyProviderProbeResult {
         let service = NativeProxyProviderService()
         let root = try service.expandedConfig(edit.file.updatedData)
         let active = try service.providerFields(root)
@@ -66,6 +68,13 @@ struct ProxyProviderProbe {
         if let groups = config["proxy-groups"]?.array() {
             config["proxy-groups"] = Node(groups.map { original in
                 var group = original
+                if edit.freshSource, let name = group["name"]?.string, let selected = selectedNodes[name],
+                   group["type"]?.string == "select", var proxies = group["proxies"]?.array(),
+                   let index = proxies.firstIndex(where: { $0.string == selected }), index > 0 {
+                    let chosen = proxies.remove(at: index)
+                    proxies.insert(chosen, at: 0)
+                    group["proxies"] = Node(proxies, .implicit, .block)
+                }
                 group["url"] = "http://127.0.0.1:1/"
                 group["interval"] = 86400
                 return group
@@ -102,8 +111,12 @@ struct ProxyProviderProbe {
         while clock.now < deadline, process.isRunning {
             try Task.checkCancellation()
             let text = try? String(contentsOf: log, encoding: .utf8)
-            if let text, expected.contains(where: { text.contains("initial proxy provider \($0) error:") }) {
-                throw NativeProxyProviderError.sourceFailed
+            if let text {
+                let failures = expected.filter { text.contains("initial proxy provider \($0) error:") }
+                if !failures.isEmpty {
+                    if edit.freshSource, let name = edit.probeProvider, failures == [name] { throw SubscriptionProbeError.newSourceFailed }
+                    throw NativeProxyProviderError.sourceFailed
+                }
             }
             if client == nil, let text,
                let range = text.range(of: "RESTful API listening at: 127.0.0.1:"),
@@ -119,6 +132,9 @@ struct ProxyProviderProbe {
                 }
             }
             try await Task.sleep(for: .milliseconds(150))
+        }
+        if process.isRunning, let freshPath, !FileManager.default.fileExists(atPath: freshPath.path) {
+            throw SubscriptionProbeError.newSourceFailed
         }
         throw NativeProxyProviderError.sourceFailed
     }

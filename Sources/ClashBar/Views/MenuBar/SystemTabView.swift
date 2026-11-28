@@ -14,23 +14,183 @@ private struct SettingsSelectionRowConfiguration<Option: Hashable> {
 }
 
 struct SystemTabView: TranslatingView {
+    enum ProxyCommandCopyTarget: Equatable {
+        case local
+        case currentEndpoint
+    }
+
     @EnvironmentObject var appViewModel: AppViewModel
+    @AppStorage("clashbar.proxy.traffic.show_chart") private var showTrafficChart: Bool = false
     @State private var isExceptionsExpanded = false
+    @State private var copiedProxyCommandTarget: ProxyCommandCopyTarget?
+    @State private var proxyCommandCopyResetTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func settingsCardHeader(_ title: String, symbol: String) -> some View {
         AppSectionHeader(title, symbol: symbol).padding(.horizontal, T.space4).padding(.bottom, T.space4)
     }
 
-    func settingsRowLabel(symbol: String, title: String) -> some View {
+    func settingsRowLabel(symbol: String, title: String, tint: Color? = nil) -> some View {
         HStack(spacing: T.space6) {
-            IconBadge(symbol: symbol, tint: self.nativeInfo, size: 20)
+            IconBadge(symbol: symbol, tint: tint ?? self.nativeInfo, size: 20)
             Text(title)
                 .font(.app(size: T.FontSize.body, weight: .medium))
                 .foregroundStyle(nativePrimaryLabel)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+    }
+
+    private func handleCopyProxyCommand(_ target: ProxyCommandCopyTarget, action: () -> Void) {
+        action()
+
+        self.proxyCommandCopyResetTask?.cancel()
+        self.proxyCommandCopyResetTask = nil
+
+        withAnimation(.snappy(duration: 0.16)) {
+            self.copiedProxyCommandTarget = target
+        }
+
+        self.proxyCommandCopyResetTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 1_600_000_000)
+            } catch {
+                return
+            }
+
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.16)) {
+                self.copiedProxyCommandTarget = nil
+            }
+            self.proxyCommandCopyResetTask = nil
+        }
+    }
+
+    private func proxyCommandActionButton(
+        title: String,
+        target: ProxyCommandCopyTarget,
+        helpTitle: String,
+        helpDetail: String,
+        action: @escaping () -> Void) -> some View
+    {
+        let copied = self.copiedProxyCommandTarget == target
+        let foreground = copied
+            ? self.nativePositive.opacity(T.Opacity.solid)
+            : self.nativeSecondaryLabel
+        let iconForeground = copied
+            ? self.nativePositive.opacity(T.Opacity.solid)
+            : self.nativeTertiaryLabel
+
+        return Button {
+            self.handleCopyProxyCommand(target) {
+                action()
+            }
+        } label: {
+            HStack(spacing: T.space4) {
+                Text(title)
+                    .font(.appMono(size: T.FontSize.caption, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .minimumScaleFactor(T.minimumScale)
+                    .monospacedDigit()
+                    .foregroundStyle(foreground)
+                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                    .font(.app(size: T.FontSize.caption, weight: .semibold))
+                    .foregroundStyle(iconForeground)
+            }
+            .padding(.horizontal, T.space6)
+            .padding(.vertical, T.space2)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(copied ? self.nativePositive.opacity(T.Opacity.tint) : self.nativeBadgeFill)
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(
+                                copied
+                                    ? self.nativePositive.opacity(0.18)
+                                    : self.nativeControlBorder.opacity(0.42),
+                                lineWidth: T.stroke)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .help("\(helpTitle)\n\(helpDetail)")
+    }
+
+    private var configAndTerminalCard: some View {
+        let localTargetDisplay = self.appViewModel.localProxyCommandTargetDisplay()
+        let managedTargetDisplay = self.appViewModel.managedEndpointProxyCommandTargetDisplay()
+        let showManagedTargetAction = localTargetDisplay != managedTargetDisplay
+
+        return VStack(spacing: 0) {
+            self.settingsCardHeader(self.tr("ui.section.config_and_terminal"), symbol: "doc.text")
+
+            HStack(spacing: T.space8) {
+                self.settingsRowLabel(symbol: "doc.text", title: self.tr("ui.quick.switch_config"), tint: self.nativePurple)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+                if self.appViewModel.isRemoteTarget {
+                    Text(self.tr("ui.machine.remote_readonly"))
+                        .font(.app(size: T.FontSize.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    AttachedPopoverMenu(
+                        width: ConfigSwitcherMenu.width,
+                        onWillPresent: { self.appViewModel.refreshRemoteConfigMenuStates() })
+                    { _ in
+                        HStack(spacing: T.space2) {
+                            Text(self.appViewModel.selectedConfigName)
+                                .foregroundStyle(nativeSecondaryLabel)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: "chevron.right")
+                                .font(.app(size: T.FontSize.caption, weight: .semibold))
+                                .foregroundStyle(nativeTertiaryLabel)
+                        }
+                        .font(.app(size: T.FontSize.caption, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    } content: { dismiss in
+                        ConfigSwitcherMenu(dismiss: dismiss).environmentObject(self.appViewModel)
+                    }
+                    .frame(width: self.settingsMenuControlWidth, alignment: .trailing)
+                    .appBorderedButtonStyle()
+                    .controlSize(.small)
+                    .disabled(self.appViewModel.isQuickRuleSaving)
+                }
+            }
+            .menuRowPadding(vertical: T.space6)
+            .overlay(alignment: .bottom) { Divider().opacity(0.4).padding(.leading, 30) }
+
+            HStack(spacing: T.space8) {
+                self.settingsRowLabel(symbol: "terminal", title: self.tr("ui.quick.terminal"), tint: self.nativeWarning)
+                    .layoutPriority(1)
+                Spacer(minLength: 0)
+                HStack(spacing: T.space4) {
+                    self.proxyCommandActionButton(
+                        title: self.appViewModel.localProxyCommandHostDisplay(),
+                        target: .local,
+                        helpTitle: self.tr("ui.quick.copy_terminal"),
+                        helpDetail: localTargetDisplay)
+                    {
+                        self.appViewModel.copyLocalProxyCommand()
+                    }
+                    if showManagedTargetAction {
+                        self.proxyCommandActionButton(
+                            title: self.appViewModel.managedEndpointProxyCommandHostDisplay(),
+                            target: .currentEndpoint,
+                            helpTitle: self.tr("ui.quick.copy_terminal_current_endpoint"),
+                            helpDetail: managedTargetDisplay)
+                        {
+                            self.appViewModel.copyManagedEndpointProxyCommand()
+                        }
+                    }
+                }
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            .menuRowPadding(vertical: T.space6)
+        }
+        .appSectionCard()
     }
 
     func settingsToggleRow(
@@ -339,6 +499,7 @@ struct SystemTabView: TranslatingView {
             if let feedback = settingsFeedbackState {
                 self.settingsFeedbackBanner(text: feedback.message, color: feedback.color, symbol: feedback.symbol)
             }
+            self.configAndTerminalCard
             VStack(spacing: 0) {
                 self.settingsCardHeader(
                     isRemote ? self.tr("ui.section.local_app_settings") : self.tr("ui.section.basic_settings"),
@@ -349,6 +510,10 @@ struct SystemTabView: TranslatingView {
                         symbol: item.symbol,
                         isOn: item.isOn)
                 }
+                self.settingsToggleRow(
+                    self.tr("ui.settings.show_traffic_chart"),
+                    symbol: "chart.xyaxis.line",
+                    isOn: self.$showTrafficChart)
                 self.settingsSelectionRow(.init(
                     title: self.tr("ui.settings.menu_bar_style"),
                     symbol: "menubar.rectangle",
@@ -564,6 +729,10 @@ struct SystemTabView: TranslatingView {
                 .menuRowPadding(vertical: T.space4)
             }
             .appSectionCard()
+        }
+        .onDisappear {
+            self.proxyCommandCopyResetTask?.cancel()
+            self.proxyCommandCopyResetTask = nil
         }
     }
 }

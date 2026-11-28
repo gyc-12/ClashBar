@@ -42,6 +42,11 @@ struct ProxyLatencySample: Decodable, Equatable, Hashable {
         guard let time else { return false }
         return now.timeIntervalSince(time) > max(60, Double(interval ?? 300) * 2)
     }
+
+    static func hasConsecutiveTimeouts(_ coreHistory: [Self]) -> Bool {
+        let recent = coreHistory.suffix(3)
+        return recent.count == 3 && recent.allSatisfy { $0.delay == 0 } && Set(recent.compactMap(\.time)).count == 3
+    }
 }
 
 struct ProxyHealthcheckSettings: Equatable {

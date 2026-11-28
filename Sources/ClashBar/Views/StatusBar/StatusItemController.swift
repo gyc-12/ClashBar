@@ -536,7 +536,8 @@ final class StatusItemController: NSObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if !self.appViewModel.isPinned, self.appViewModel.quickRuleEditorContext == nil,
-                   self.appViewModel.proxyProviderEditorContext == nil, !self.appViewModel.isReadingBrowser {
+                   self.appViewModel.proxyProviderEditorContext == nil, self.appViewModel.groupEditorContext == nil,
+                   !self.appViewModel.showsSiteChecks, !self.appViewModel.isReadingBrowser {
                     self.closePopover(nil)
                 }
             }

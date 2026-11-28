@@ -38,6 +38,8 @@ class Socks(socketserver.BaseRequestHandler):
             host = socket.inet_ntoa(read(client, 4))
             assert host == "127.0.0.1"
             port, = struct.unpack("!H", read(client, 2))
+            if port == gate.server_port:
+                port = http.server_port
             with socket.create_connection((host, port), timeout=2) as upstream:
                 client.sendall(b"\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x00")
                 while True:
@@ -81,6 +83,11 @@ class HTTP(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class DirectFailure(HTTP):
+    def do_GET(self):
+        self.send_error(503)
+
+
 def start(server):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
@@ -90,8 +97,10 @@ socks = start(socketserver.ThreadingTCPServer(("127.0.0.1", 0), Socks))
 first = start(socketserver.ThreadingTCPServer(("127.0.0.1", 0), Echo))
 second = start(socketserver.ThreadingTCPServer(("127.0.0.1", 0), Echo))
 http = http.server.ThreadingHTTPServer(("127.0.0.1", 0), HTTP)
+gate = start(type(http)(("127.0.0.1", 0), DirectFailure))
 ready = pathlib.Path(sys.argv[1])
 tmp = ready.with_suffix(".tmp")
-tmp.write_text(json.dumps({"http": http.server_port, "first": first.server_address[1], "second": second.server_address[1]}))
+tmp.write_text(json.dumps({"http": http.server_port, "gate": gate.server_port, "socks": socks.server_address[1],
+                           "first": first.server_address[1], "second": second.server_address[1]}))
 tmp.replace(ready)
 http.serve_forever()

@@ -7,7 +7,7 @@ import Testing
 
 @MainActor
 struct ProxyProviderIntegrationTests {
-    private struct Ports: Decodable { let http: UInt16; let first: UInt16; let second: UInt16 }
+    private struct Ports: Decodable { let http: UInt16; let first: UInt16; let second: UInt16; let socks: UInt16; let gate: UInt16 }
     private struct RuntimeConnections: Decodable {
         struct Connection: Decodable { let providerChains: [String]? }
         let connections: [Connection]?
@@ -40,10 +40,14 @@ struct ProxyProviderIntegrationTests {
             tun: {enable: false, stack: system}
             ipv6: false
             find-process-mode: off
+            proxies:
+              - {name: bootstrap, type: socks5, server: 127.0.0.1, port: \(ports.socks)}
             proxy-providers:
               A: {type: http, url: '\(source)/first', path: ./a.yaml, interval: 3600}
               B: {type: http, url: '\(source)/second', path: ./b.yaml, interval: 3600}
             proxy-groups:
+              - {name: proxy, type: select, proxies: [bootstrap]}
+              - {name: us, type: select, proxies: [DIRECT]}
               - {name: First, type: select, use: [A]}
               - {name: Second, type: select, use: [B]}
               - {name: Auto, type: select, include-all-providers: true}
@@ -148,6 +152,39 @@ struct ProxyProviderIntegrationTests {
         #expect(model.nativeProxyProviderDocument?.entries.map(\.name) == ["A"])
         let deleted: ProviderSummary = try await client.request(.proxyProviders)
         #expect(deleted.providers["B"] == nil)
+
+        func apply(_ action: NativeProxyProviderAction) async throws {
+            let document = try #require(model.nativeProxyProviderDocument)
+            #expect(try await model.saveProxyProvider(action, document: document, fallback: nil))
+        }
+        try await apply(.group(name: "proxy", members: ["bootstrap", "us"]))
+        let nested: ProxyGroupsResponse = try await client.request(.proxies)
+        #expect(nested.proxies["proxy"]?.all == ["bootstrap", "us"])
+        try await apply(.group(name: "proxy", members: ["bootstrap"]))
+        try await apply(.group(name: "us", members: nil))
+        let remaining: ProxyGroupsResponse = try await client.request(.proxies)
+        #expect(remaining.proxies["us"] == nil)
+        let gated = "http://127.0.0.1:\(ports.gate)"
+        let customOptions = SubscriptionOptions(prefix: "HK-")
+        try await apply(.add(name: "Routed", url: gated + "/first", interval: nil, healthCheckURL: source, groups: [], options: customOptions))
+        let result: ProviderSummary = try await client.request(.proxyProviders)
+        #expect(result.providers["Routed"]?.proxies?.map(\.name) == ["HK-first"])
+        let afterRetry = try #require(model.nativeProxyProviderDocument)
+        let root = try NativeProxyProviderService().expandedConfig(afterRetry.data)
+        #expect(root["proxy-providers"]?["Routed"]?["proxy"]?.string == "proxy")
+        #expect(root["proxy-providers"]?["Routed"]?["interval"]?.int == SubscriptionOptions.defaultInterval)
+        try await apply(.edit(name: "Routed", newName: "RenamedRouted", url: gated + "/first", interval: 600,
+                              healthCheckURL: source, options: SubscriptionOptions(downloadProxy: "proxy", prefix: "")))
+        let afterRename: ProviderSummary = try await client.request(.proxyProviders)
+        #expect(afterRename.providers["Routed"] == nil)
+        #expect(afterRename.providers["RenamedRouted"]?.proxies?.map(\.name) == ["first"])
+        let renamedDoc = try #require(model.nativeProxyProviderDocument)
+        do {
+            try await apply(.add(name: "Invalid", url: gated + "/invalid", interval: nil, healthCheckURL: source, groups: []))
+            Issue.record("Expected both download routes to fail")
+        } catch { #expect(error as? NativeProxyProviderError == .retryFailed("proxy")) }
+        #expect(try Data(contentsOf: environment.config) == renamedDoc.data)
+        #expect(core.status == pid)
     }
 
     private func freePort() throws -> UInt16 {

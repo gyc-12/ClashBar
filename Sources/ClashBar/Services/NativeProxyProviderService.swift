@@ -6,6 +6,9 @@ struct NativeProxyProvider: Equatable, Identifiable {
     let type: String
     let url: String?
     let enabled: Bool
+    let interval: Int?
+    let healthCheckURL: String?
+    let options: SubscriptionOptions
     var id: String { name }
 }
 
@@ -13,6 +16,7 @@ struct NativeProxyProviderGroup: Equatable, Identifiable {
     let name: String
     let automatic: Bool
     let use: [String]
+    let members: [String]
     var id: String { name }
 }
 
@@ -21,6 +25,11 @@ struct NativeProxyProviderDocument: Equatable {
     let data: Data
     let entries: [NativeProxyProvider]
     let groups: [NativeProxyProviderGroup]
+    let staticNodes: [String]
+
+    static let builtInPolicies = ["DIRECT", "REJECT", "REJECT-DROP", "PASS"]
+
+    var memberChoices: [String] { groups.map(\.name) + staticNodes + Self.builtInPolicies }
 
     var activeNames: Set<String> { Set(entries.filter(\.enabled).map(\.name)) }
 
@@ -30,15 +39,18 @@ struct NativeProxyProviderDocument: Equatable {
 }
 
 enum NativeProxyProviderAction {
-    case add(name: String, url: String, interval: Int?, healthCheckURL: String?, groups: Set<String>)
-    case edit(name: String, url: String)
+    case add(name: String, url: String, interval: Int?, healthCheckURL: String?, groups: Set<String>, options: SubscriptionOptions = .init())
+    case edit(name: String, newName: String? = nil, url: String, interval: Int? = nil, healthCheckURL: String? = nil, options: SubscriptionOptions? = nil)
     case setEnabled(name: String, enabled: Bool)
     case delete(name: String)
+    case group(name: String, members: [String]?)
 }
 
 enum NativeProxyProviderError: Error, Equatable {
     case invalidConfig, invalidName, invalidURL, invalidInterval, conflict, unavailable, sourceFailed, reloadFailed
     case emptyGroups([String])
+    case groupCycle, groupReferences([String])
+    case invalidOptions, retryFailed(String)
 }
 
 struct NativeProxyProviderEdit {
@@ -88,9 +100,10 @@ struct NativeProxyProviderService {
         let groups = try parsed.groups.map { group in
             guard let name = group["name"]?.string else { throw NativeProxyProviderError.invalidConfig }
             return NativeProxyProviderGroup(name: name, automatic: automatic(group),
-                                            use: try strings(lookup(parsed.layouts, name) ?? group["use"]))
+                                            use: try strings(lookup(parsed.layouts, name) ?? group["use"]), members: try strings(group["proxies"]))
         }
-        return NativeProxyProviderDocument(configURL: configURL, data: data, entries: entries, groups: groups)
+        return NativeProxyProviderDocument(configURL: configURL, data: data, entries: entries, groups: groups,
+            staticNodes: parsed.root["proxies"]?.array().compactMap { $0["name"]?.string } ?? [])
     }
 
     func prepare(_ action: NativeProxyProviderAction, in document: NativeProxyProviderDocument,
@@ -101,6 +114,7 @@ struct NativeProxyProviderService {
         var groups = original.groups
         let oldGroups = groups
         var name: String
+        var originalName: String?
         var probe: String?
         var fresh = false
         var affected = Set<String>()
@@ -113,19 +127,38 @@ struct NativeProxyProviderService {
             }
             return logical
         }
+        func validateProviderName(_ candidateName: String) throws {
+            let reserved = ["default", "GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "COMPATIBLE", "PASS", "PASS-RULE"]
+            guard !candidateName.isEmpty, !candidateName.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  !reserved.contains(where: { $0.caseInsensitiveCompare(candidateName) == .orderedSame }),
+                  lookup(definitions, candidateName) == nil, lookup(candidate.suspended, candidateName) == nil,
+                  !groups.contains(where: { $0["name"]?.string == candidateName }) else { throw NativeProxyProviderError.invalidName }
+        }
+        func validateOptions(_ options: SubscriptionOptions, interval: Int?, allowedProxy: String? = nil) throws {
+            if let interval, !(0...Int(Int32.max)).contains(interval) { throw NativeProxyProviderError.invalidInterval }
+            guard (1...Int(Int32.max)).contains(options.healthInterval) else { throw NativeProxyProviderError.invalidInterval }
+            var validProxies = ["DIRECT"] + document.groups.map(\.name) + document.staticNodes
+            if let allowedProxy { validProxies.append(allowedProxy) }
+            guard validProxies.contains(options.downloadProxy),
+                  !options.prefix.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
+                  options.userAgents.allSatisfy({ !$0.isEmpty && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) })
+            else { throw NativeProxyProviderError.invalidOptions }
+        }
 
         switch action {
-        case let .add(rawName, url, interval, healthURL, bindings):
+        case let .group(groupName, members):
+            return try prepareGroup(groupName, members: members, document: document, original: original)
+        case let .add(rawName, url, interval, healthURL, bindings, options):
             name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
-            let reserved = ["default", "GLOBAL", "DIRECT", "REJECT", "REJECT-DROP", "COMPATIBLE", "PASS", "PASS-RULE"]
-            guard !name.isEmpty, !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains),
-                  !reserved.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }),
-                  lookup(definitions, name) == nil, lookup(candidate.suspended, name) == nil,
-                  !groups.contains(where: { $0["name"]?.string == name }) else { throw NativeProxyProviderError.invalidName }
-            if let interval, !(1...Int(Int32.max)).contains(interval) { throw NativeProxyProviderError.invalidInterval }
+            try validateProviderName(name)
+            try validateOptions(options, interval: interval ?? SubscriptionOptions.defaultInterval)
             var definition: Node = ["type": scalar("http"), "url": try httpURL(url), "path": cachePath(cacheID)]
-            if let interval { definition["interval"] = Node(String(interval), Tag(.int)) }
-            if let healthURL { definition["health-check"] = ["enable": trueNode, "url": try httpURL(healthURL)] }
+            definition["interval"] = Node(String(interval ?? SubscriptionOptions.defaultInterval), Tag(.int))
+            definition["health-check"] = ["enable": Node(String(options.healthEnabled), Tag(.bool)),
+                "url": try httpURL(healthURL ?? SubscriptionOptions.defaultHealthURL), "interval": Node(String(options.healthInterval), Tag(.int))]
+            definition["proxy"] = scalar(options.downloadProxy)
+            if !options.userAgents.isEmpty { definition["header"] = ["User-Agent": sequence(options.userAgents)] }
+            if !options.prefix.isEmpty { definition["override"] = ["additional-prefix": scalar(options.prefix)] }
             assign(definition, named: name, in: &definitions)
             candidate.order.append(name)
             var remaining = bindings
@@ -139,19 +172,108 @@ struct NativeProxyProviderService {
             guard remaining.isEmpty else { throw NativeProxyProviderError.conflict }
             probe = name
             fresh = true
-        case let .edit(target, url):
-            name = target
-            guard (lookup(definitions, name) == nil) != (lookup(candidate.suspended, name) == nil),
-                  var definition = lookup(definitions, name) ?? lookup(candidate.suspended, name), definition["type"]?.string == "http"
+        case let .edit(target, rawNewName, url, interval, healthURL, options):
+            let isActive = lookup(definitions, target) != nil
+            let isSuspended = lookup(candidate.suspended, target) != nil
+            guard isActive != isSuspended,
+                  let initialDefinition = lookup(definitions, target) ?? lookup(candidate.suspended, target)
             else { throw NativeProxyProviderError.conflict }
-            let normalized = try httpURL(url)
-            if normalized.string != definition["url"]?.string {
-                definition["url"] = normalized
-                definition["path"] = cachePath(cacheID)
-                if lookup(definitions, name) != nil { assign(definition, named: name, in: &definitions) }
-                else { assign(definition, named: name, in: &candidate.suspended) }
-                probe = name
-                fresh = true
+            let targetName = (rawNewName ?? target).trimmingCharacters(in: .whitespacesAndNewlines)
+            let renamed = targetName != target
+            if renamed { try validateProviderName(targetName) }
+            name = targetName
+            originalName = target
+            var definition = initialDefinition
+            let isHTTP = definition["type"]?.string == "http"
+            if isHTTP {
+                let normalized = try httpURL(url)
+                if normalized.string != definition["url"]?.string {
+                    definition["url"] = normalized
+                    definition["path"] = cachePath(cacheID)
+                    fresh = true
+                }
+                if let options {
+                    let currentEntry = try entry(target, initialDefinition, enabled: isActive)
+                    try validateOptions(options, interval: interval, allowedProxy: initialDefinition["proxy"]?.string)
+                    if interval != currentEntry.interval {
+                        if let interval { definition["interval"] = Node(String(interval), Tag(.int)) }
+                        else { remove("interval", from: &definition) }
+                    }
+                    let healthChanged = options.healthEnabled != currentEntry.options.healthEnabled
+                        || healthURL != currentEntry.healthCheckURL
+                        || options.healthInterval != currentEntry.options.healthInterval
+                    if healthChanged {
+                        var healthCheck = definition["health-check"]?.mapping != nil ? definition["health-check"]! : mapping([])
+                        healthCheck["enable"] = Node(String(options.healthEnabled), Tag(.bool))
+                        if options.healthEnabled {
+                            healthCheck["url"] = try httpURL(healthURL ?? SubscriptionOptions.defaultHealthURL)
+                            healthCheck["interval"] = Node(String(options.healthInterval), Tag(.int))
+                            definition["health-check"] = healthCheck
+                        } else if definition["health-check"] != nil || healthURL != nil {
+                            if let healthURL { healthCheck["url"] = try httpURL(healthURL) }
+                            healthCheck["interval"] = Node(String(options.healthInterval), Tag(.int))
+                            definition["health-check"] = healthCheck
+                        }
+                    }
+                    if options.downloadProxy != currentEntry.options.downloadProxy {
+                        definition["proxy"] = scalar(options.downloadProxy)
+                    }
+                    if options.userAgents != currentEntry.options.userAgents {
+                        var header = definition["header"]?.mapping != nil ? definition["header"]! : mapping([])
+                        if let existingKey = header.mapping?.first(where: { $0.key.string?.caseInsensitiveCompare("User-Agent") == .orderedSame })?.key.string {
+                            remove(existingKey, from: &header)
+                        }
+                        if !options.userAgents.isEmpty {
+                            assign(sequence(options.userAgents), named: "User-Agent", in: &header)
+                            definition["header"] = header
+                        } else if header.mapping?.isEmpty ?? true {
+                            remove("header", from: &definition)
+                        } else {
+                            definition["header"] = header
+                        }
+                    }
+                    if options.prefix != currentEntry.options.prefix {
+                        var override = definition["override"]?.mapping != nil ? definition["override"]! : mapping([])
+                        if options.prefix.isEmpty {
+                            remove("additional-prefix", from: &override)
+                            if override.mapping?.isEmpty ?? true { remove("override", from: &definition) }
+                            else { definition["override"] = override }
+                        } else {
+                            assign(scalar(options.prefix), named: "additional-prefix", in: &override)
+                            definition["override"] = override
+                        }
+                    }
+                }
+            }
+            let definitionChanged = !same(initialDefinition, definition)
+            if renamed || definitionChanged {
+                if isActive {
+                    if renamed { remove(target, from: &definitions) }
+                    assign(definition, named: name, in: &definitions)
+                    probe = name
+                } else {
+                    if renamed { remove(target, from: &candidate.suspended) }
+                    assign(definition, named: name, in: &candidate.suspended)
+                    if fresh { probe = name }
+                }
+                if renamed {
+                    candidate.order = candidate.order.map { $0 == target ? name : $0 }
+                    var seenLayoutGroups = Set<String>()
+                    for index in groups.indices {
+                        guard let group = groups[index]["name"]?.string else { throw NativeProxyProviderError.invalidConfig }
+                        seenLayoutGroups.insert(group)
+                        let use = try strings(lookup(original.layouts, group) ?? groups[index]["use"])
+                        guard use.contains(target) else { continue }
+                        let logical = try checkLayout(groups[index], group).map { $0 == target ? name : $0 }
+                        replaceReferences(logical, in: &groups[index], groupName: group, candidate: &candidate)
+                        if groups[index] != oldGroups[index] { affected.insert(group) }
+                    }
+                    for (group, saved) in try fields(original.layouts) where !seenLayoutGroups.contains(group) {
+                        let logical = try strings(saved)
+                        guard logical.contains(target) else { continue }
+                        assign(sequence(logical.map { $0 == target ? name : $0 }), named: group, in: &candidate.layouts)
+                    }
+                }
             }
         case let .setEnabled(target, enabled):
             name = target
@@ -207,7 +329,8 @@ struct NativeProxyProviderService {
         default: break
         }
 
-        if lookup(original.definitions, name) != lookup(definitions, name) {
+        let previousLookupName = originalName ?? name
+        if lookup(original.definitions, previousLookupName) != lookup(definitions, name) || previousLookupName != name {
             for group in groups where automatic(group) || (try? strings(group["use"]).contains(name)) == true {
                 if let groupName = group["name"]?.string { affected.insert(groupName) }
             }
@@ -266,7 +389,7 @@ struct NativeProxyProviderService {
         if oldGroups != groups { candidate.root[Self.groupsKey] = Node(groups, .implicit, .block) }
         let changesRuntime = !same(original.root, candidate.root)
         let changed = changesRuntime || original.suspended != candidate.suspended || original.layouts != candidate.layouts
-        let data = changed ? try render(original: original, candidate: candidate, provider: name) : document.data
+        let data = changed ? try render(original: original, candidate: candidate, provider: name, originalProvider: originalName) : document.data
         return NativeProxyProviderEdit(
             file: NativeRuleEdit(configURL: document.configURL, originalConfig: document.data,
                                  targetURL: document.configURL.resolvingSymlinksInPath(), originalData: document.data,
@@ -282,9 +405,99 @@ struct NativeProxyProviderService {
         else { remove(groupName, from: &candidate.layouts) }
     }
 
+    private func prepareGroup(_ name: String, members: [String]?, document: NativeProxyProviderDocument,
+                              original: Parsed) throws -> NativeProxyProviderEdit {
+        var candidate = original
+        var groups = original.groups
+        guard let index = groups.firstIndex(where: { $0["name"]?.string == name }) else { throw NativeProxyProviderError.conflict }
+        if let members {
+            let old = try strings(groups[index]["proxies"])
+            let choices = Set(document.memberChoices + old)
+            guard Set(members).count == members.count, members.allSatisfy(choices.contains) else { throw NativeProxyProviderError.conflict }
+            let group = groups[index]
+            let hasProviders = automatic(group) ? !document.activeNames.isEmpty : try !strings(group["use"]).isEmpty
+            guard !members.isEmpty || hasProviders || (automaticNodes(group) && !document.staticNodes.isEmpty) else {
+                throw NativeProxyProviderError.emptyGroups([name])
+            }
+            var dependencies = Dictionary(uniqueKeysWithValues: document.groups.map { ($0.name, $0.members) })
+            dependencies[name] = members
+            var seen = Set<String>()
+            var pending = members
+            while let target = pending.popLast() {
+                guard target != name else { throw NativeProxyProviderError.groupCycle }
+                if seen.insert(target).inserted { pending += dependencies[target] ?? [] }
+            }
+            if old != members {
+                if members.isEmpty { remove("proxies", from: &groups[index]) }
+                else { groups[index]["proxies"] = sequence(members) }
+                remove(name, from: &candidate.temporaryProxies)
+            }
+        } else {
+            var references = document.groups.filter { $0.name != name && $0.members.contains(name) }.map { "proxy-groups → \($0.name)" }
+            func inspectRules(_ list: Node?, at path: String) throws {
+                for (index, rule) in try strings(list).enumerated() {
+                    if let syntax = NativeRuleSyntax(raw: rule), syntax.target == name && !syntax.targetsSubRule {
+                        references.append("\(path)[\(index + 1)]")
+                    }
+                }
+            }
+            try inspectRules(original.root["rules"], at: "rules")
+            for (section, list) in try fields(original.root["sub-rules"] ?? mapping([])) {
+                try inspectRules(list, at: "sub-rules.\(section)")
+            }
+            func inspectAdapters(_ value: Node, path: String) {
+                if let map = value.mapping {
+                    for (key, child) in map {
+                        let field = key.string ?? "?"
+                        if ["proxy", "dialer-proxy", "empty-fallback"].contains(field), child.string == name {
+                            references.append(path + "." + field)
+                        } else { inspectAdapters(child, path: path + "." + field) }
+                    }
+                } else if let list = value.sequence {
+                    for (index, child) in list.enumerated() { inspectAdapters(child, path: "\(path)[\(index + 1)]") }
+                }
+            }
+            for section in ["proxy-groups", "proxies", "proxy-providers", "rule-providers", "listeners"] {
+                if let value = original.root[section] { inspectAdapters(value, path: section) }
+            }
+            inspectAdapters(original.suspended, path: "disabled-proxy-providers")
+            guard references.isEmpty else { throw NativeProxyProviderError.groupReferences(references) }
+            groups.remove(at: index)
+            remove(name, from: &candidate.layouts)
+            remove(name, from: &candidate.temporaryProxies)
+        }
+        candidate.root[Self.groupsKey] = Node(groups, .implicit, .block)
+        let data = groups == original.groups ? document.data : try render(original: original, candidate: candidate, provider: "")
+        return NativeProxyProviderEdit(file: NativeRuleEdit(configURL: document.configURL, originalConfig: document.data,
+            targetURL: document.configURL.resolvingSymlinksInPath(), originalData: document.data, updatedData: data, provider: nil),
+            document: try read(configURL: document.configURL, data: data), affectedGroups: members == nil ? [] : [name],
+            probeProvider: nil, freshSource: false, changesRuntime: data != document.data)
+    }
+
     private func entry(_ name: String, _ node: Node, enabled: Bool) throws -> NativeProxyProvider {
         guard node.mapping != nil, let type = node["type"]?.string else { throw NativeProxyProviderError.invalidConfig }
-        return NativeProxyProvider(name: name, type: type, url: node["url"]?.string, enabled: enabled)
+        let interval = node["interval"]?.int ?? node["interval"]?.string.flatMap(Int.init)
+        let healthCheck = node["health-check"]
+        let healthEnabled = healthCheck?["enable"].map(flag) ?? false
+        let healthURL = healthCheck?["url"]?.string
+        let healthInterval = (healthCheck?["interval"]?.int ?? healthCheck?["interval"]?.string.flatMap(Int.init))
+            ?? SubscriptionOptions.defaultHealthInterval
+        let downloadProxy = node["proxy"]?.string?.trimmedNonEmpty ?? "DIRECT"
+        let agentNode = node["header"]?.mapping?.first(where: { $0.key.string?.caseInsensitiveCompare("User-Agent") == .orderedSame })?.value
+        let userAgents: [String] = if let list = agentNode?.sequence {
+            list.compactMap(\.string)
+        } else if let single = agentNode?.string {
+            [single]
+        } else {
+            []
+        }
+        let prefix = node["override"]?["additional-prefix"]?.string ?? ""
+        return NativeProxyProvider(
+            name: name, type: type, url: node["url"]?.string, enabled: enabled, interval: interval,
+            healthCheckURL: healthURL,
+            options: SubscriptionOptions(
+                healthEnabled: healthEnabled, healthInterval: healthInterval, downloadProxy: downloadProxy,
+                userAgents: userAgents, prefix: prefix))
     }
 
     private func parse(_ data: Data) throws -> Parsed {
@@ -323,7 +536,7 @@ struct NativeProxyProviderService {
                       suspended: suspended, layouts: layouts, temporaryProxies: temporaryProxies, order: order)
     }
 
-    private func render(original: Parsed, candidate: Parsed, provider: String) throws -> Data {
+    private func render(original: Parsed, candidate: Parsed, provider: String, originalProvider: String? = nil) throws -> Data {
         var metadata: [String] = []
         if !(candidate.suspended.mapping?.isEmpty ?? true) {
             var state: Node = ["definitions": candidate.suspended, "groups": candidate.layouts, "order": sequence(candidate.order)]
@@ -339,18 +552,19 @@ struct NativeProxyProviderService {
         var mutations: [(Range<Int>, [String])] = []
         let oldDefs = original.definitions
         let newDefs = candidate.definitions
+        let patchProvider = originalProvider ?? provider
         var canPatch = root.mapping?.style != .flow
         if !same(oldDefs, newDefs) {
             if let section = root.mapping?.first(where: { $0.key.string == Self.providersKey }),
                let range = lineRange(of: section.key, among: root, body: body, end: body.count) {
                 let providerMap = section.value
-                if providerMap.mapping?.style != .flow, let pair = providerMap.mapping?.first(where: { $0.key.string == provider }),
+                if providerMap.mapping?.style != .flow, let pair = providerMap.mapping?.first(where: { $0.key.string == patchProvider }),
                    let providerRange = lineRange(of: pair.key, among: providerMap, body: body, end: range.upperBound),
                    let indent = pair.key.mark.map({ $0.column - 1 }), indent > 0,
                    !(newDefs.mapping?.isEmpty ?? true) {
                     let replacement = try lookup(newDefs, provider).map { try emitted(mapping([(provider, $0)])) } ?? []
                     mutations.append((providerRange, replacement.map { String(repeating: " ", count: indent) + $0 }))
-                } else if providerMap.mapping?.style != .flow, lookup(oldDefs, provider) == nil,
+                } else if providerMap.mapping?.style != .flow, lookup(oldDefs, provider) == nil, originalProvider == nil,
                           let pair = providerMap.mapping?.first, let indent = pair.key.mark.map({ $0.column - 1 }),
                           indent > 0, let value = lookup(newDefs, provider),
                           lineRange(of: pair.key, among: providerMap, body: body, end: range.upperBound) != nil,
@@ -402,6 +616,21 @@ struct NativeProxyProviderService {
                             mutations.append((end..<end, try emitted(mapping(additions)).map { indentation + "  " + $0 }))
                         }
                     }
+                }
+            } else if let section = root.mapping?.first(where: { $0.key.string == Self.groupsKey }),
+                      let range = lineRange(of: section.key, among: root, body: body, end: body.count),
+                      let replacement = candidate.root[Self.groupsKey] {
+                let survivors = Set(candidate.groups.compactMap { $0["name"]?.string })
+                let raw = section.value.array()
+                if !survivors.isEmpty, raw.count == survivors.count + 1, section.value.sequence?.style != .flow,
+                   let removed = original.groups.firstIndex(where: { !survivors.contains($0["name"]?.string ?? "") }),
+                   let line = raw[removed].mark?.line, body.indices.contains(line - 1),
+                   body[line - 1].trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
+                    let next = removed + 1 < raw.count ? (raw[removed + 1].mark?.line ?? line) - 1 : range.upperBound
+                    if next > line - 1 { mutations.append((line - 1..<trimmedEnd(body, start: line - 1, end: next), [])) }
+                    else { canPatch = false }
+                } else {
+                    mutations.append((range, try emitted(mapping([(Self.groupsKey, replacement)]))))
                 }
             } else { canPatch = false }
         }
@@ -533,7 +762,6 @@ struct NativeProxyProviderService {
     private func automaticNodes(_ group: Node) -> Bool { flag(group["include-all"]) || flag(group["include-all-proxies"]) }
     private func flag(_ node: Node?) -> Bool { node?.bool ?? ["true", "1", "yes", "on"].contains(node?.string?.lowercased() ?? "") }
     private func scalar(_ value: String) -> Node { Node(value, Tag(.str), .singleQuoted) }
-    private var trueNode: Node { Node("true", Tag(.bool)) }
     private func mapping(_ pairs: [(String, Node)]) -> Node {
         Node(pairs.map { key, value in
             let plain = Node(key)

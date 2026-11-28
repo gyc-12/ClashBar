@@ -4,10 +4,13 @@ struct ProxyProviderEditorView: TranslatingView {
     @EnvironmentObject var appViewModel: AppViewModel
     @Environment(\.dismiss) private var dismiss
     let context: ProxyProviderEditorContext
-    @State private var name = ""
+    @State private var name: String
     @State private var url: String
-    @State private var interval = ""
-    @State private var healthURL = ""
+    @State private var interval: String
+    @State private var healthURL: String
+    @State private var healthInterval: String
+    @State private var options: SubscriptionOptions
+    @State private var userAgents: String
     @State private var bindings: Set<String> = []
     @State private var showOptions = false
     @State private var saving = false
@@ -17,7 +20,24 @@ struct ProxyProviderEditorView: TranslatingView {
 
     init(context: ProxyProviderEditorContext) {
         self.context = context
-        self._url = State(initialValue: context.entry?.url ?? "")
+        if context.operation == .edit, let entry = context.entry {
+            self._name = State(initialValue: entry.name)
+            self._url = State(initialValue: entry.url ?? "")
+            self._interval = State(initialValue: entry.interval.map(String.init) ?? "")
+            self._healthURL = State(initialValue: entry.healthCheckURL ?? "")
+            self._healthInterval = State(initialValue: String(entry.options.healthInterval))
+            self._options = State(initialValue: entry.options)
+            self._userAgents = State(initialValue: entry.options.userAgents.joined(separator: "\n"))
+        } else {
+            let defaults = SubscriptionOptions()
+            self._name = State(initialValue: "")
+            self._url = State(initialValue: "")
+            self._interval = State(initialValue: String(SubscriptionOptions.defaultInterval))
+            self._healthURL = State(initialValue: SubscriptionOptions.defaultHealthURL)
+            self._healthInterval = State(initialValue: String(defaults.healthInterval))
+            self._options = State(initialValue: defaults)
+            self._userAgents = State(initialValue: defaults.userAgents.joined(separator: "\n"))
+        }
     }
 
     private var title: String {
@@ -29,16 +49,29 @@ struct ProxyProviderEditorView: TranslatingView {
         case .delete: tr("ui.proxy_provider.delete")
         }
     }
+
+    private var isHTTPSubscription: Bool {
+        context.operation == .add || context.entry?.type == "http"
+    }
+
     private var automaticGroups: [String] {
         context.document.groups.filter(\.automatic).map(\.name)
     }
+
     private var previewGroups: [String] {
         if let entry = context.entry { return context.document.affectedGroups(for: entry.name) }
         return automaticGroups + context.document.groups.filter { bindings.contains($0.name) }.map(\.name)
     }
 
+    private var downloadRouteChoices: [String] {
+        var choices = ["DIRECT"] + context.document.groups.map(\.name) + context.document.staticNodes
+        if !choices.contains(options.downloadProxy) { choices.append(options.downloadProxy) }
+        return choices
+    }
+
     private var sheetHeight: CGFloat {
-        if context.operation == .add { return showOptions ? 600 : 460 }
+        if (context.operation == .add || (context.operation == .edit && isHTTPSubscription)) && showOptions { return 600 }
+        if context.operation == .add || context.operation == .edit { return 460 }
         return needsFallback ? 520 : 440
     }
 
@@ -49,22 +82,36 @@ struct ProxyProviderEditorView: TranslatingView {
             VStack(alignment: .leading, spacing: 12) {
                 if context.operation == .add || context.operation == .edit {
                     VStack(alignment: .leading, spacing: 12) {
-                        if context.operation == .add { field("ui.proxy_provider.name", text: $name) }
-                        field("ui.proxy_provider.url", text: $url, prompt: "https://…", monospaced: true)
+                        field("ui.proxy_provider.name", text: $name)
+                        if isHTTPSubscription {
+                            field("ui.proxy_provider.url", text: $url, prompt: "https://…", monospaced: true)
+                        }
                     }.appSectionCard(padding: 12)
                 }
-                if context.operation == .add {
+                if context.operation == .add || (context.operation == .edit && isHTTPSubscription) {
                     DisclosureGroup(tr("ui.proxy_provider.options"), isExpanded: $showOptions) {
                         VStack(alignment: .leading, spacing: 10) {
                             field("ui.proxy_provider.interval", text: $interval, monospaced: true)
-                            field("ui.proxy_provider.healthcheck", text: $healthURL, prompt: "https://…", monospaced: true)
-                            let manual = context.document.groups.filter { !$0.automatic }
-                            if !manual.isEmpty {
-                                Text(tr("ui.proxy_provider.bind")).font(.app(size: MenuBarLayoutTokens.FontSize.subheadline)).foregroundStyle(.secondary)
-                                ForEach(manual) { group in
-                                    Toggle(group.name, isOn: Binding(get: { bindings.contains(group.name) }, set: { selected in
-                                        if selected { bindings.insert(group.name) } else { bindings.remove(group.name) }
-                                    }))
+                            Toggle(tr("ui.subscription.health_enabled"), isOn: $options.healthEnabled)
+                            field("ui.proxy_provider.healthcheck", text: $healthURL, prompt: SubscriptionOptions.defaultHealthURL, monospaced: true)
+                            field("ui.subscription.health_interval", text: $healthInterval, monospaced: true)
+                            Picker(tr("ui.subscription.route"), selection: $options.downloadProxy) {
+                                ForEach(downloadRouteChoices, id: \.self) { Text(verbatim: $0).tag($0) }
+                            }
+                            SheetNote(text: tr("ui.subscription.route_note"))
+                            field("ui.subscription.prefix", text: $options.prefix, prompt: tr("ui.subscription.prefix_placeholder"))
+                            SheetField(title: tr("ui.subscription.agents")) {
+                                TextEditor(text: $userAgents).font(.system(.caption, design: .monospaced)).frame(height: 78)
+                            }
+                            if context.operation == .add {
+                                let manual = context.document.groups.filter { !$0.automatic }
+                                if !manual.isEmpty {
+                                    Text(tr("ui.proxy_provider.bind")).font(.app(size: MenuBarLayoutTokens.FontSize.subheadline)).foregroundStyle(.secondary)
+                                    ForEach(manual) { group in
+                                        Toggle(group.name, isOn: Binding(get: { bindings.contains(group.name) }, set: { selected in
+                                            if selected { bindings.insert(group.name) } else { bindings.remove(group.name) }
+                                        }))
+                                    }
                                 }
                             }
                         }.padding(.top, 10)
@@ -84,8 +131,10 @@ struct ProxyProviderEditorView: TranslatingView {
                 if needsFallback {
                     SheetField(title: tr("ui.proxy_provider.fallback")) {
                         Picker(tr("ui.proxy_provider.fallback"), selection: $fallback) {
-                            Text(tr("ui.proxy_provider.fallback_required")).tag(nil as NativeProxyProviderService.Fallback?)
-                            ForEach(NativeProxyProviderService.Fallback.allCases) { value in Text(value.rawValue).tag(Optional(value)) }
+                            Text(tr("ui.proxy_provider.fallback_required")).tag(nil as NativeProxyProviderService.Fallback?).disabled(true)
+                            ForEach(NativeProxyProviderService.Fallback.allCases) { value in
+                                Text(tr("ui.proxy_provider.fallback.\(value.rawValue)")).tag(Optional(value))
+                            }
                         }.labelsHidden()
                     }.appSectionCard(padding: 12)
                 }
@@ -117,16 +166,33 @@ struct ProxyProviderEditorView: TranslatingView {
         }
     }
 
+    private func parsedOptions() throws -> (interval: Int?, options: SubscriptionOptions) {
+        let raw = interval.trimmingCharacters(in: .whitespacesAndNewlines)
+        let seconds = Int(raw)
+        guard raw.isEmpty || seconds != nil else { throw NativeProxyProviderError.invalidInterval }
+        let healthSeconds = healthInterval.trimmedNonEmpty ?? String(SubscriptionOptions.defaultHealthInterval)
+        guard let parsed = Int(healthSeconds) else { throw NativeProxyProviderError.invalidInterval }
+        var draft = options
+        draft.healthInterval = parsed
+        draft.userAgents = userAgents.components(separatedBy: .newlines).compactMap(\.trimmedNonEmpty)
+        return (seconds, draft)
+    }
+
     private func action() throws -> NativeProxyProviderAction {
         if context.operation == .add {
-            let raw = interval.trimmingCharacters(in: .whitespacesAndNewlines)
-            let seconds = Int(raw)
-            guard raw.isEmpty || seconds != nil else { throw NativeProxyProviderError.invalidInterval }
-            return .add(name: name, url: url, interval: seconds, healthCheckURL: healthURL.trimmedNonEmpty, groups: bindings)
+            let parsed = try parsedOptions()
+            return .add(name: name, url: url, interval: parsed.interval, healthCheckURL: healthURL.trimmedNonEmpty,
+                        groups: bindings, options: parsed.options)
         }
         guard let entry = context.entry else { throw NativeProxyProviderError.conflict }
         switch context.operation {
-        case .edit: return .edit(name: entry.name, url: url)
+        case .edit:
+            if entry.type == "http" {
+                let parsed = try parsedOptions()
+                return .edit(name: entry.name, newName: name, url: url, interval: parsed.interval,
+                             healthCheckURL: healthURL.trimmedNonEmpty, options: parsed.options)
+            }
+            return .edit(name: entry.name, newName: name, url: entry.url ?? "")
         case .enable: return .setEnabled(name: entry.name, enabled: true)
         case .disable: return .setEnabled(name: entry.name, enabled: false)
         case .delete: return .delete(name: entry.name)

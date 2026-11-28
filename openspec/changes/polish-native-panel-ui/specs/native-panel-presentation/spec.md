@@ -26,15 +26,23 @@ The app SHALL 使用 376pt 面板、紧凑水平模式切换和清晰页面选�
 - **WHEN** 用户使用英文界面
 - **THEN** 页面导航按文字所需宽度布局，Connections 等标签完整显示，辅助功能名称保持一致
 
+#### Scenario: Open the configuration switcher
+- **WHEN** 用户打开「切换配置」
+- **THEN** 配置列表、管理操作和 Wi-Fi 自动切换使用与主面板一致的卡片，当前文件有勾选标记；远程刷新、右键绑定和删除保持可用，长列表可滚动
+
 ### Requirement: Readable traffic dashboard
-The app SHALL 把实时指标与流量曲线分层显示，并以不超出有效数据范围的平滑曲线呈现最近历史。
+The app SHALL 在节点页默认以单行紧凑条呈现实时上下行速率、连接数与内存，并通过系统设置中的开关控制是否显示平滑流量曲线图。
+
+#### Scenario: Traffic chart toggled off by default
+- **WHEN** 用户首次打开节点页或未开启流量曲线图开关
+- **THEN** 顶部只显示紧凑的单行速率与状态摘要，不渲染曲线图，为下方提供商和策略组保留首屏空间
 
 #### Scenario: Traffic peaks
-- **WHEN** 历史包含尖峰、零值或持续相等值
+- **WHEN** 用户开启流量曲线图开关且历史包含尖峰、零值或持续相等值
 - **THEN** 曲线不遮挡文字、不产生负流量或越界峰值，空历史和单点可以正常显示
 
 ### Requirement: Accessible proxy controls and latency disclosure
-The app SHALL 以双列磁贴呈现系统代理与 TUN，保留原有操作边界，并按语义区分延迟与逐步显示次要操作。
+The app SHALL 在节点页以双列磁贴呈现系统代理与 TUN，在系统设置页提供切换配置与终端代理命令入口，保留原有操作边界，并按语义区分延迟与逐步显示次要操作。
 
 #### Scenario: Hover or focus a group
 - **WHEN** 用户悬停或通过键盘聚焦策略组操作

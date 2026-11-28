@@ -20,3 +20,4 @@
 - [x] 3.4 经真实 provider 节点建立长连接并核对 providerChains，记录目标及其他提供商的重载影响、PID 和运行设置
 - [x] 3.5 中英文浅深色界面检查、swift build、相关 swift test、make spec-check、CodeGraph 和无核心打包
 - [x] 3.6 更新操作说明与验证记录，说明整份订阅覆盖及连接影响
+- [x] 3.7 区分禁用 / 重新启用图标；中英文空组提示明确两种回退策略的效果

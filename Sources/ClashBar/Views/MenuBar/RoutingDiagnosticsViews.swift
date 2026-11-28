@@ -94,7 +94,8 @@ struct ProxyGroupDetailView: TranslatingView {
                 }.appSectionCard(padding: 12)
                 VStack(alignment: .leading, spacing: 8) {
                     AppSectionHeader(self.tr("ui.section.proxy_groups"), count: "\(group.all.count)")
-                    ForEach(group.all, id: \.self) { node in
+                    let folded = appViewModel.foldedNodes(in: group)
+                    FoldableNodesList(nodes: group.all, folded: folded, title: tr("ui.groups.timeouts", folded.count), emptyText: tr("ui.common.na")) { node in
                         self.nodeRow(node, group: group, interval: settings.interval)
                     }
                 }.appSectionCard(padding: 12)

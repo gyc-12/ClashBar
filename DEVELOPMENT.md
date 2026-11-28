@@ -98,6 +98,10 @@ CLASHBAR_TEST_RENDER_DIR=/tmp/clashbar-provider-preview swift test --filter Prox
 
 ## 原生面板 UI 验证
 
+`swift test --filter GeminiRegionTests` 用中文、英文地区拒绝页面、新旧两种功能标记格式（`"45631641":true` 与 `45631641,null,true`）、ChatGPT `/cdn-cgi/trace` 与拦截页样本，以及登录 / 验证 / 标记冲突样本验证地区分类；独立 loopback HTTP 代理只接收 CONNECT 并返回 407，核验实际探测使用指定代理、不携带控制器凭据，无需访问外部站点或用户核心。真实浏览器对比应使用相同的核心分流，并区分匿名结果与账号权限。
+
+`ProxyPanelToolsTests` 覆盖嵌套组、成员排序与清空 `proxies`、删除依赖、通用订阅默认值与重命名/全参数编辑、重复轮询不计数、当前项保护及站点的控制器响应分类。`ProxyProviderIntegrationTests` 另用独立核心、仅监听 loopback 的 HTTP 失败入口及 SOCKS 转发，验证实际新增或移除子组、删除组、重命名提供商、直连失败后的代理拉取、节点前缀生效和两次失败时的文件快照。检测测试不请求真实站点或用户的订阅链接。
+
 `NativePanelPresentationTests` 覆盖流量曲线的边界与最近 60 个样本、延迟语义阈值、中英文本键和格式参数、短屏幕面板定位，以及节点菜单外部尺寸包含内边距的回归。
 
 `NativePanelVisualTests` 使用临时配置、独立 UserDefaults 和假核心，不启动核心。控制器固定为 `127.0.0.1:1`，状态栏设为纯图标，预览窗口不展示到屏幕；不会发现或控制用户正在使用的核心。预览包括五个页面、空状态、长策略组和节点名称、360pt 短面板、滚动后的置顶筛选区、端口与维护设置，以及六类编辑 / 诊断弹窗和提供商的各项操作。每个场景都导出中文、英文及浅色、深色 PNG。

@@ -71,6 +71,8 @@ final class AppViewModel: ObservableObject {
     @Published var nativeProxyProviderError: String?
     @Published var nativeProxyProviderNotice: String?
     @Published var proxyProviderEditorContext: ProxyProviderEditorContext?
+    @Published var groupEditorContext: GroupEditorContext?
+    @Published var showsSiteChecks = false
     @Published var appliedProviderConfig: AppliedProviderConfig?
     var proxyProviderPresentationGeneration = 0
     var isProxyProviderSaving = false
@@ -433,7 +435,7 @@ final class AppViewModel: ObservableObject {
     @AppStorage("clashbar.ssid.strategy.enabled") var ssidStrategyEnabledStorage: Bool = false
     @AppStorage("clashbar.statusbar.display.mode") private var statusBarDisplayModeRaw: String = StatusBarDisplayMode
         .iconOnly.rawValue
-    @AppStorage("clashbar.proxy.node.hide_unavailable") var hideUnavailableProxyNodes: Bool = false
+    @AppStorage("clashbar.proxy.node.fold_timeouts") var foldTimeoutNodes = true
     let selectedConfigKey = "clashbar.config.selected.filename"
     let legacySelectedConfigKey = "clashbar.config.selected"
     let remoteConfigSourcesKey = "clashbar.config.remote.sources.v1"

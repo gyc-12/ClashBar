@@ -70,7 +70,7 @@ enum Endpoint {
     case groupDelay(name: String, url: String, timeout: Int)
 
     case proxies
-    case proxyDelay(name: String, url: String, timeout: Int)
+    case proxyDelay(name: String, url: String, timeout: Int, expected: String? = nil)
     case switchProxy(name: String, target: String)
 
     case proxyProviders
@@ -117,7 +117,7 @@ enum Endpoint {
         case .getConfigs, .putConfigs, .patchConfigs: "/configs"
         case let .groupDelay(name, _, _): "/group/\(name.urlPathSegmentEscaped)/delay"
         case .proxies: "/proxies"
-        case let .proxyDelay(name, _, _): "/proxies/\(name.urlPathSegmentEscaped)/delay"
+        case let .proxyDelay(name, _, _, _): "/proxies/\(name.urlPathSegmentEscaped)/delay"
         case let .switchProxy(name, _): "/proxies/\(name.urlPathSegmentEscaped)"
         case .proxyProviders:
             Self.proxyProvidersPath
@@ -147,8 +147,10 @@ enum Endpoint {
             self.optionalQueryItem(name: "level", value: level)
         case let .putConfigs(force, _, _):
             force ? [URLQueryItem(name: "force", value: "true")] : []
-        case let .groupDelay(_, url, timeout), let .proxyDelay(_, url, timeout):
+        case let .groupDelay(_, url, timeout):
             self.healthcheckQueryItems(url: url, timeout: timeout)
+        case let .proxyDelay(_, url, timeout, expected):
+            self.healthcheckQueryItems(url: url, timeout: timeout, expected: expected)
         case let .proxyProviderHealthcheck(_, url, timeout), let .proxyProviderProxyHealthcheck(_, _, url, timeout):
             self.healthcheckQueryItems(url: url, timeout: timeout)
         case let .connections(interval):
@@ -182,7 +184,7 @@ enum Endpoint {
         case .proxyProviderHealthcheck:
             180
         case let .groupDelay(_, _, timeout),
-             let .proxyDelay(_, _, timeout),
+             let .proxyDelay(_, _, timeout, _),
              let .proxyProviderProxyHealthcheck(_, _, _, timeout):
             max(5, TimeInterval(timeout) / 1000.0 + 2)
         case .upgradeCore, .upgradeGeo, .putConfigs, .updateProxyProvider:
@@ -206,11 +208,15 @@ enum Endpoint {
         "\(Self.proxyProvidersPath)/\(name.urlPathSegmentEscaped)"
     }
 
-    private func healthcheckQueryItems(url: String, timeout: Int) -> [URLQueryItem] {
-        [
+    private func healthcheckQueryItems(url: String, timeout: Int, expected: String? = nil) -> [URLQueryItem] {
+        var items = [
             URLQueryItem(name: "url", value: url),
             URLQueryItem(name: "timeout", value: "\(timeout)"),
         ]
+        if let expected, !expected.isEmpty {
+            items.append(URLQueryItem(name: "expected", value: expected))
+        }
+        return items
     }
 
     private func optionalQueryItem(name: String, value: String?) -> [URLQueryItem] {
